@@ -12,210 +12,9 @@ from pathlib import Path
 
 import click
 
-from .filetool import append_bytes_to_file
-
-# =============================================================================
-# Custom exception for validation with CLI-friendly messages
-# =============================================================================
-
-
-class ValidationError(ValueError):
-    """
-    Validation error that can carry both Python API and CLI-friendly messages.
-
-    When raised from standalone functions, can include a CLI-specific message
-    that references flag names instead of parameter names.
-    """
-
-    def __init__(
-        self,
-        msg: str,
-        cli_msg: str | None = None,
-    ):
-        super().__init__(msg)
-        self.cli_msg = cli_msg
-
-
-# =============================================================================
-# Standalone functions (can be called from Python or CLI)
-# =============================================================================
-
-
-def append_line(
-    *,
-    line: str,
-    path: Path,
-    unique: bool = False,
-    line_ending: bytes = b"\n",
-    comment_marker: str | None = None,
-    ignore_leading_whitespace: bool = False,
-    ignore_trailing_whitespace: bool = False,
-    create_if_missing: bool = True,
-    make_parents: bool = False,
-    unlink_first: bool = False,
-    dry_run: bool = False,
-) -> int:
-    """
-    Append a single line to a file with automatic line ending.
-
-    Args:
-        line: The line to append (without newline)
-        path: Path to the file
-        unique: Only append if line not already present
-        line_ending: Line ending to use (default: LF)
-        comment_marker: Optional comment marker for unique comparison
-        ignore_leading_whitespace: Ignore leading whitespace in unique comparison
-        ignore_trailing_whitespace: Ignore trailing whitespace in unique comparison
-        create_if_missing: Create file if it doesn't exist
-        make_parents: Create parent directories if needed
-        unlink_first: Unlink file before writing (requires unique=True)
-        dry_run: Show what would be written without modifying file
-
-    Returns:
-        Number of bytes written (0 if already present with unique=True)
-
-    Raises:
-        ValueError: If line is empty or contains line_ending
-        ValueError: If unlink_first=True without unique=True
-        ValueError: If make_parents=True without create_if_missing=True
-        ValueError: If whitespace flags used without unique=True
-    """
-    # Validation
-    if len(line) == 0:
-        raise ValidationError(
-            "Line must not be empty", cli_msg="LINE must not be empty"
-        )
-
-    if unlink_first and not unique:
-        raise ValidationError(
-            "unlink_first=True requires unique=True",
-            cli_msg="--unlink-first requires --unique",
-        )
-
-    if make_parents and not create_if_missing:
-        raise ValidationError(
-            "make_parents=True requires create_if_missing=True",
-            cli_msg="--make-parents requires file creation (do not use --do-not-create)",
-        )
-
-    if ignore_leading_whitespace and not unique:
-        raise ValidationError(
-            "ignore_leading_whitespace=True requires unique=True",
-            cli_msg="--ignore-leading-whitespace requires --unique",
-        )
-
-    if ignore_trailing_whitespace and not unique:
-        raise ValidationError(
-            "ignore_trailing_whitespace=True requires unique=True",
-            cli_msg="--ignore-trailing-whitespace requires --unique",
-        )
-
-    # Encode line
-    line_bytes = line.encode("utf-8", errors="strict")
-
-    # Check for embedded line endings
-    if line_ending in line_bytes:
-        raise ValidationError(
-            f"Line contains the line_ending delimiter ({line_ending!r}). "
-            f"Options: (1) Use separate calls for multiple lines, "
-            f"(2) Use append_bytes for multi-line data, or "
-            f"(3) Choose a different line_ending that doesn't appear in your data.",
-            cli_msg=(
-                f"Line contains the line_ending delimiter ({line_ending!r}). "
-                f"Options: (1) Use separate calls for multiple lines, "
-                f"(2) Use 'append-bytes' for multi-line data, or "
-                f"(3) Choose a different --line-ending that doesn't appear in your data."
-            ),
-        )
-
-    # Add line ending
-    bytes_payload = line_bytes + line_ending
-
-    # Dry run
-    if dry_run:
-        return len(bytes_payload)
-
-    # Write
-    return append_bytes_to_file(
-        bytes_payload=bytes_payload,
-        path=path,
-        unique_bytes=unique,
-        create_if_missing=create_if_missing,
-        make_parents=make_parents,
-        unlink_first=unlink_first,
-        line_ending=line_ending if unique else None,
-        comment_marker=comment_marker.encode("utf8") if comment_marker else None,
-        ignore_leading_whitespace=ignore_leading_whitespace,
-        ignore_trailing_whitespace=ignore_trailing_whitespace,
-    )
-
-
-def append_bytes(
-    *,
-    data: bytes,
-    path: Path,
-    unique: bool = False,
-    create_if_missing: bool = True,
-    make_parents: bool = False,
-    unlink_first: bool = False,
-    dry_run: bool = False,
-) -> int:
-    """
-    Append raw bytes to a file without modification.
-
-    Args:
-        data: The bytes to append
-        path: Path to the file
-        unique: Only append if bytes not already present (uses substring search)
-        create_if_missing: Create file if it doesn't exist
-        make_parents: Create parent directories if needed
-        unlink_first: Unlink file before writing (requires unique=True)
-        dry_run: Show what would be written without modifying file
-
-    Returns:
-        Number of bytes written (0 if already present with unique=True)
-
-    Raises:
-        ValueError: If data is empty
-        ValueError: If unlink_first=True without unique=True
-        ValueError: If make_parents=True without create_if_missing=True
-    """
-    # Validation
-    if len(data) == 0:
-        raise ValidationError(
-            "Data must not be empty", cli_msg="BYTES must not be empty"
-        )
-
-    if unlink_first and not unique:
-        raise ValidationError(
-            "unlink_first=True requires unique=True",
-            cli_msg="--unlink-first requires --unique",
-        )
-
-    if make_parents and not create_if_missing:
-        raise ValidationError(
-            "make_parents=True requires create_if_missing=True",
-            cli_msg="--make-parents requires file creation (do not use --do-not-create)",
-        )
-
-    # Dry run
-    if dry_run:
-        return len(data)
-
-    # Write
-    return append_bytes_to_file(
-        bytes_payload=data,
-        path=path,
-        unique_bytes=unique,
-        create_if_missing=create_if_missing,
-        make_parents=make_parents,
-        unlink_first=unlink_first,
-        line_ending=None,  # Binary mode - no line ending
-        comment_marker=None,
-        ignore_leading_whitespace=False,
-        ignore_trailing_whitespace=False,
-    )
-
+from .append_bytes_to_path import append_bytes_to_path
+from .append_line_to_path import append_line_to_path
+from .validation import ValidationError
 
 # =============================================================================
 # Click CLI setup
@@ -276,7 +75,11 @@ CLICK_GLOBAL_OPTIONS = [
 
 
 @cli.command("append-line")
-@click.argument("lines", type=str, nargs=-1)
+@click.argument(
+    "lines",
+    type=str,
+    nargs=-1,
+)
 @click_add_options(CLICK_GLOBAL_OPTIONS)
 @click.option(
     "--unique",
@@ -306,7 +109,7 @@ CLICK_GLOBAL_OPTIONS = [
     is_flag=True,
     help="Ignore trailing whitespace for the line matched by --unique.",
 )
-def _append_line_to_path(
+def append_line_command(
     lines: tuple[str, ...],
     path: Path,
     unique_line: bool,
@@ -345,7 +148,7 @@ def _append_line_to_path(
             continue
 
         try:
-            bytes_written = append_line(
+            bytes_written = append_line_to_path(
                 line=line,
                 path=path,
                 unique=unique_line,
@@ -369,7 +172,11 @@ def _append_line_to_path(
 
 
 @cli.command("append-bytes")
-@click.argument("byte_vectors", type=str, nargs=-1)
+@click.argument(
+    "byte_vectors",
+    type=str,
+    nargs=-1,
+)
 @click_add_options(CLICK_GLOBAL_OPTIONS)
 @click.option(
     "--unique",
@@ -387,7 +194,7 @@ def _append_line_to_path(
     type=click.Path(path_type=Path),
     help="Insert bytes from a file instead of positional args.",
 )
-def _append_bytes_to_path(
+def append_bytes_command(
     byte_vectors: tuple[str, ...],
     path: Path,
     bytes_from_path: None | Path,
@@ -443,7 +250,7 @@ def _append_bytes_to_path(
             continue
 
         try:
-            bytes_written = append_bytes(
+            bytes_written = append_bytes_to_path(
                 data=data,
                 path=path,
                 unique=unique_bytes,

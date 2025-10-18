@@ -44,3 +44,7 @@ filetool = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "eintr_tests: Tests that verify EINTR signal handling (run with -m eintr_tests)",
+]
+

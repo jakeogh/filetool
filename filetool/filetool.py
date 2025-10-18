@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf8 -*-
 # tab-width:4
 
 # pylint: disable=invalid-name                    # [C0103] single letter var names, name too descriptive(!)
@@ -34,7 +33,11 @@ Constraint = dict[str, Any]
 
 DEFAULT_LOCK_DIR = Path("/tmp/filetool-locks")
 LOCK_DIR = Path(os.environ.get("FILETOOL_LOCK_DIR", DEFAULT_LOCK_DIR))
-LOCK_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+LOCK_DIR.mkdir(
+    parents=True,
+    exist_ok=True,
+    mode=0o700,
+)
 
 
 def get_lockfile_path(target_path: Path) -> Path:
@@ -70,7 +73,11 @@ def open_with_mode(
 ) -> int:
     old_umask = os.umask(0)
     try:
-        return open_eintr_safe(path, flags, mode)
+        return open_eintr_safe(
+            path,
+            flags,
+            mode,
+        )
     finally:
         os.umask(old_umask)
 
@@ -565,7 +572,11 @@ def ensure_bytes_present(
     # global lock to allow mutiple instances to run concurrently without file corruption
     lock_path = get_lockfile_path(path)
     # without 0o666 the root user might create a lockfile that the normal user cant acquire a lock on.
-    lock_fd = open_with_mode(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o666)
+    lock_fd = open_with_mode(
+        lock_path,
+        os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW,
+        0o666,
+    )
     try:
         fcntl.flock(lock_fd, fcntl.LOCK_EX)
 

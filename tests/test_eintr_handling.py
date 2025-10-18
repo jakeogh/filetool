@@ -20,12 +20,7 @@ from pathlib import Path
 import pytest
 
 
-# Skip these tests by default since they can interfere with pytest
-pytestmark = pytest.mark.skip(
-    reason="EINTR tests send signals that can kill pytest. Run explicitly with -m eintr_tests if needed."
-)
-
-
+@pytest.mark.eintr_tests
 def test_append_bytes_in_subprocess_with_signals():
     """Test that append operations work correctly when interrupted by signals in a subprocess."""
     test_script = """
@@ -59,6 +54,7 @@ result = append_bytes_to_file(
     unique_bytes=False,
     create_if_missing=True,
     make_parents=False,
+    unlink_first=False,
 )
 
 spammer.join(timeout=2)
@@ -85,6 +81,7 @@ print("SUCCESS")
         assert test_file.read_bytes() == b"initial\ndata\n"
 
 
+@pytest.mark.eintr_tests
 def test_unique_append_in_subprocess_with_signals():
     """Test unique mode under signal interruption in a subprocess."""
     test_script = """
@@ -118,6 +115,7 @@ result = append_bytes_to_file(
     unique_bytes=True,
     create_if_missing=True,
     make_parents=False,
+    unlink_first=False,
     line_ending=b"\\n",
 )
 
@@ -144,6 +142,7 @@ print("SUCCESS")
         assert "SUCCESS" in result.stdout
 
 
+@pytest.mark.eintr_tests
 def test_unique_skip_existing_in_subprocess_with_signals():
     """Test that duplicate detection works under signal interruption in a subprocess."""
     test_script = """
@@ -177,6 +176,7 @@ result = append_bytes_to_file(
     unique_bytes=True,
     create_if_missing=True,
     make_parents=False,
+    unlink_first=False,
     line_ending=b"\\n",
 )
 
@@ -203,6 +203,7 @@ print("SUCCESS")
         assert "SUCCESS" in result.stdout
 
 
+@pytest.mark.eintr_tests
 def test_file_creation_in_subprocess_with_signals():
     """Test file/directory creation under signal interruption in a subprocess."""
     test_script = """
@@ -235,6 +236,7 @@ result = append_bytes_to_file(
     unique_bytes=False,
     create_if_missing=True,
     make_parents=True,
+    unlink_first=False,
 )
 
 spammer.join(timeout=2)
@@ -260,6 +262,7 @@ print("SUCCESS")
         assert "SUCCESS" in result.stdout
 
 
+@pytest.mark.eintr_tests
 def test_binary_data_in_subprocess_with_signals():
     """Test binary data integrity under signal interruption in a subprocess."""
     test_script = """
@@ -293,6 +296,7 @@ result = append_bytes_to_file(
     unique_bytes=False,
     create_if_missing=True,
     make_parents=False,
+    unlink_first=False,
 )
 
 spammer.join(timeout=2)
@@ -321,4 +325,4 @@ print("SUCCESS")
 
 if __name__ == "__main__":
     # Run tests directly
-    pytest.main([__file__, "-v"])
+    pytest.main([__file__, "-v", "-m", "eintr_tests"])

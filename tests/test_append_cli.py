@@ -447,7 +447,7 @@ def test_error_make_parents_without_create(tmpfile):
         ],
     )
     assert result.exit_code != 0
-    assert "create_if_missing=False requires make_parents=False" in result.output
+    assert "--make-parents requires file creation (do not use --do-not-create)" in result.output
 
 
 def test_error_unlink_first_without_unique(tmpfile):
@@ -457,7 +457,7 @@ def test_error_unlink_first_without_unique(tmpfile):
         cli, ["append-line", "abc", "--path", str(tmpfile), "--unlink-first"]
     )
     assert result.exit_code != 0
-    assert "unlink_first=True requires unique_line=True" in result.output
+    assert "--unlink-first requires --unique" in result.output
 
 
 def test_error_empty_line(tmpfile):
@@ -465,7 +465,7 @@ def test_error_empty_line(tmpfile):
     runner = CliRunner()
     result = runner.invoke(cli, ["append-line", "", "--path", str(tmpfile)])
     assert result.exit_code != 0
-    assert "cannot write empty input" in result.output
+    assert "must not be empty" in result.output
 
 
 def test_error_invalid_hex(tmpfile):
