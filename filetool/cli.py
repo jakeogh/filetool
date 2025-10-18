@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf8 -*-
 # tab-width:4
 
 # pylint: disable=too-many-arguments              # [R0913] oo many arguments (13/10) [R0913]
@@ -14,6 +13,213 @@ from pathlib import Path
 import click
 
 from .filetool import append_bytes_to_file
+
+# =============================================================================
+# Custom exception for validation with CLI-friendly messages
+# =============================================================================
+
+
+class ValidationError(ValueError):
+    """
+    Validation error that can carry both Python API and CLI-friendly messages.
+
+    When raised from standalone functions, can include a CLI-specific message
+    that references flag names instead of parameter names.
+    """
+
+    def __init__(
+        self,
+        msg: str,
+        cli_msg: str | None = None,
+    ):
+        super().__init__(msg)
+        self.cli_msg = cli_msg
+
+
+# =============================================================================
+# Standalone functions (can be called from Python or CLI)
+# =============================================================================
+
+
+def append_line(
+    *,
+    line: str,
+    path: Path,
+    unique: bool = False,
+    line_ending: bytes = b"\n",
+    comment_marker: str | None = None,
+    ignore_leading_whitespace: bool = False,
+    ignore_trailing_whitespace: bool = False,
+    create_if_missing: bool = True,
+    make_parents: bool = False,
+    unlink_first: bool = False,
+    dry_run: bool = False,
+) -> int:
+    """
+    Append a single line to a file with automatic line ending.
+
+    Args:
+        line: The line to append (without newline)
+        path: Path to the file
+        unique: Only append if line not already present
+        line_ending: Line ending to use (default: LF)
+        comment_marker: Optional comment marker for unique comparison
+        ignore_leading_whitespace: Ignore leading whitespace in unique comparison
+        ignore_trailing_whitespace: Ignore trailing whitespace in unique comparison
+        create_if_missing: Create file if it doesn't exist
+        make_parents: Create parent directories if needed
+        unlink_first: Unlink file before writing (requires unique=True)
+        dry_run: Show what would be written without modifying file
+
+    Returns:
+        Number of bytes written (0 if already present with unique=True)
+
+    Raises:
+        ValueError: If line is empty or contains line_ending
+        ValueError: If unlink_first=True without unique=True
+        ValueError: If make_parents=True without create_if_missing=True
+        ValueError: If whitespace flags used without unique=True
+    """
+    # Validation
+    if len(line) == 0:
+        raise ValidationError(
+            "Line must not be empty", cli_msg="LINE must not be empty"
+        )
+
+    if unlink_first and not unique:
+        raise ValidationError(
+            "unlink_first=True requires unique=True",
+            cli_msg="--unlink-first requires --unique",
+        )
+
+    if make_parents and not create_if_missing:
+        raise ValidationError(
+            "make_parents=True requires create_if_missing=True",
+            cli_msg="--make-parents requires file creation (do not use --do-not-create)",
+        )
+
+    if ignore_leading_whitespace and not unique:
+        raise ValidationError(
+            "ignore_leading_whitespace=True requires unique=True",
+            cli_msg="--ignore-leading-whitespace requires --unique",
+        )
+
+    if ignore_trailing_whitespace and not unique:
+        raise ValidationError(
+            "ignore_trailing_whitespace=True requires unique=True",
+            cli_msg="--ignore-trailing-whitespace requires --unique",
+        )
+
+    # Encode line
+    line_bytes = line.encode("utf-8", errors="strict")
+
+    # Check for embedded line endings
+    if line_ending in line_bytes:
+        raise ValidationError(
+            f"Line contains the line_ending delimiter ({line_ending!r}). "
+            f"Options: (1) Use separate calls for multiple lines, "
+            f"(2) Use append_bytes for multi-line data, or "
+            f"(3) Choose a different line_ending that doesn't appear in your data.",
+            cli_msg=(
+                f"Line contains the line_ending delimiter ({line_ending!r}). "
+                f"Options: (1) Use separate calls for multiple lines, "
+                f"(2) Use 'append-bytes' for multi-line data, or "
+                f"(3) Choose a different --line-ending that doesn't appear in your data."
+            ),
+        )
+
+    # Add line ending
+    bytes_payload = line_bytes + line_ending
+
+    # Dry run
+    if dry_run:
+        return len(bytes_payload)
+
+    # Write
+    return append_bytes_to_file(
+        bytes_payload=bytes_payload,
+        path=path,
+        unique_bytes=unique,
+        create_if_missing=create_if_missing,
+        make_parents=make_parents,
+        unlink_first=unlink_first,
+        line_ending=line_ending if unique else None,
+        comment_marker=comment_marker.encode("utf8") if comment_marker else None,
+        ignore_leading_whitespace=ignore_leading_whitespace,
+        ignore_trailing_whitespace=ignore_trailing_whitespace,
+    )
+
+
+def append_bytes(
+    *,
+    data: bytes,
+    path: Path,
+    unique: bool = False,
+    create_if_missing: bool = True,
+    make_parents: bool = False,
+    unlink_first: bool = False,
+    dry_run: bool = False,
+) -> int:
+    """
+    Append raw bytes to a file without modification.
+
+    Args:
+        data: The bytes to append
+        path: Path to the file
+        unique: Only append if bytes not already present (uses substring search)
+        create_if_missing: Create file if it doesn't exist
+        make_parents: Create parent directories if needed
+        unlink_first: Unlink file before writing (requires unique=True)
+        dry_run: Show what would be written without modifying file
+
+    Returns:
+        Number of bytes written (0 if already present with unique=True)
+
+    Raises:
+        ValueError: If data is empty
+        ValueError: If unlink_first=True without unique=True
+        ValueError: If make_parents=True without create_if_missing=True
+    """
+    # Validation
+    if len(data) == 0:
+        raise ValidationError(
+            "Data must not be empty", cli_msg="BYTES must not be empty"
+        )
+
+    if unlink_first and not unique:
+        raise ValidationError(
+            "unlink_first=True requires unique=True",
+            cli_msg="--unlink-first requires --unique",
+        )
+
+    if make_parents and not create_if_missing:
+        raise ValidationError(
+            "make_parents=True requires create_if_missing=True",
+            cli_msg="--make-parents requires file creation (do not use --do-not-create)",
+        )
+
+    # Dry run
+    if dry_run:
+        return len(data)
+
+    # Write
+    return append_bytes_to_file(
+        bytes_payload=data,
+        path=path,
+        unique_bytes=unique,
+        create_if_missing=create_if_missing,
+        make_parents=make_parents,
+        unlink_first=unlink_first,
+        line_ending=None,  # Binary mode - no line ending
+        comment_marker=None,
+        ignore_leading_whitespace=False,
+        ignore_trailing_whitespace=False,
+    )
+
+
+# =============================================================================
+# Click CLI setup
+# =============================================================================
 
 
 @click.group(
@@ -116,78 +322,50 @@ def _append_line_to_path(
 ):
     """Append LINES to a file with control over creation, uniqueness, and error handling."""
 
-    create_if_missing = not do_not_create_if_missing
-
+    # CLI-only validation
     if not len(lines) > 0:
         raise click.ClickException("At least one LINE must be specified.")
-    if unlink_first and not unique_line:
-        raise click.ClickException("unlink_first=True requires unique_line=True.")
-    if make_parents and not create_if_missing:
-        raise click.ClickException(
-            "create_if_missing=False requires make_parents=False."
-        )
 
-    if ignore_leading_whitespace:
-        if not unique_line:
-            raise click.ClickException("--ignore-leading-whitespace requires --unique.")
-
-    if ignore_trailing_whitespace:
-        if not unique_line:
-            raise click.ClickException(
-                "--ignore-trailing-whitespace requires --unique."
-            )
-
+    # Map line ending code to bytes
     line_ending_dict = {
         "LF": b"\n",
         "CRLF": b"\r\n",
         "CR": b"\r",
     }
-    try:
-        line_ending = line_ending_dict[line_ending_code]
-        bytes_payloads = []
-        for _line in lines:
-            if len(_line) == 0:
-                raise click.ClickException(
-                    "Error: cannot write empty input; please provide at least one byte."
-                )
-            _line_bytes = _line.encode("utf-8", errors="strict")  # latin1?
-            assert line_ending not in _line_bytes
+    line_ending = line_ending_dict[line_ending_code]
+    create_if_missing = not do_not_create_if_missing
 
-            # Append newline. Use `append-bytes` for more control.
-            _line_bytes += line_ending
-            bytes_payloads.append(_line_bytes)
+    # Process each line
+    for line in lines:
+        if dry_run:
+            click.echo(
+                f"[filetool append-line][dry-run] Would write: "
+                f"{(line.encode('utf-8') + line_ending)!r} to {path}"
+            )
+            continue
 
-        for _bytes in bytes_payloads:
-            bytes_written = None
-            if dry_run:
-                click.echo(
-                    f"[filetool append-line][dry-run] Would write: {_bytes!r} to {path}"
-                )
-                return
-
-            bytes_written = append_bytes_to_file(
-                bytes_payload=_bytes,
+        try:
+            bytes_written = append_line(
+                line=line,
                 path=path,
-                unique_bytes=unique_line,
+                unique=unique_line,
+                line_ending=line_ending,
+                comment_marker=comment_marker,
+                ignore_leading_whitespace=ignore_leading_whitespace,
+                ignore_trailing_whitespace=ignore_trailing_whitespace,
                 create_if_missing=create_if_missing,
                 make_parents=make_parents,
                 unlink_first=unlink_first,
-                line_ending=line_ending if unique_line else None,
-                comment_marker=(
-                    comment_marker.encode("utf8") if comment_marker else None
-                ),
-                ignore_leading_whitespace=ignore_leading_whitespace,
-                ignore_trailing_whitespace=ignore_trailing_whitespace,
+                dry_run=False,  # Already handled above
             )
+
             if bytes_written:
                 click.echo(
-                    f"[filetool append-line] Wrote {len(_bytes)} bytes to {path}"
+                    f"[filetool append-line] Wrote {bytes_written} bytes to {path}"
                 )
-
-    # except (OSError, ValueError) as e:
-    except ValueError as e:
-        click.echo(f"Error: {e}", err=True)
-        raise SystemExit(1) from e
+        except ValidationError as e:
+            # Use CLI-friendly message if available
+            raise click.ClickException(e.cli_msg or str(e)) from e
 
 
 @cli.command("append-bytes")
@@ -207,7 +385,7 @@ def _append_line_to_path(
 @click.option(
     "--bytes-from-path",
     type=click.Path(path_type=Path),
-    help="Insert bytes from a file instead of LINE.",
+    help="Insert bytes from a file instead of positional args.",
 )
 def _append_bytes_to_path(
     byte_vectors: tuple[str, ...],
@@ -223,7 +401,7 @@ def _append_bytes_to_path(
 ):
     """Append BYTES to a file with control over creation, uniqueness, and error handling."""
 
-    create_if_missing = not do_not_create_if_missing
+    # CLI-only validation
     if not (len(byte_vectors) > 0 or bytes_from_path):
         raise click.ClickException(
             "At least one of BYTES or --bytes-from-path must be specified."
@@ -232,51 +410,54 @@ def _append_bytes_to_path(
         raise click.ClickException(
             "BYTES and --bytes-from-path are mutually exclusive."
         )
-    if unlink_first and not unique_bytes:
-        raise click.ClickException("unlink_first=True requires unique_bytes=True.")
-    if make_parents and not create_if_missing:
-        raise click.ClickException(
-            "create_if_missing=False requires make_parents=False."
-        )
 
-    try:
+    create_if_missing = not do_not_create_if_missing
 
-        bytes_payloads = []
-        if bytes_from_path:
+    # Collect all byte payloads
+    bytes_payloads = []
+    if bytes_from_path:
+        try:
             with open(bytes_from_path, "rb") as fh:
                 bytes_payloads.append(fh.read())
-        else:
-            for _bv in byte_vectors:
-                if len(_bv) == 0:
-                    raise click.ClickException(
-                        "Error: cannot write empty input; please provide at least one byte."
-                    )
+        except OSError as e:
+            raise click.ClickException(f"Failed to read {bytes_from_path}: {e}") from e
+    else:
+        for bv in byte_vectors:
+            if len(bv) == 0:
+                raise click.ClickException("Cannot write empty input")
+            try:
                 if hex_input:
-                    _line_bytes = bytes.fromhex(_bv)
+                    data = bytes.fromhex(bv)
                 else:
-                    _line_bytes = _bv.encode("utf-8", errors="strict")
-                bytes_payloads.append(_line_bytes)
+                    data = bv.encode("utf-8", errors="strict")
+                bytes_payloads.append(data)
+            except ValueError as e:
+                raise click.ClickException(f"Invalid input: {e}") from e
 
-        for _bytes in bytes_payloads:
-            bytes_written = None
-            if dry_run:
-                click.echo(f"[dry-run] Would write: {_bytes!r} to {path}")
-                return
+    # Write each payload
+    for data in bytes_payloads:
+        if dry_run:
+            click.echo(
+                f"[filetool append-bytes][dry-run] Would write: {data!r} to {path}"
+            )
+            continue
 
-            bytes_written = append_bytes_to_file(
-                bytes_payload=_bytes,
+        try:
+            bytes_written = append_bytes(
+                data=data,
                 path=path,
-                unique_bytes=unique_bytes,
+                unique=unique_bytes,
                 create_if_missing=create_if_missing,
                 make_parents=make_parents,
                 unlink_first=unlink_first,
+                dry_run=False,  # Already handled above
             )
-            if bytes_written:
-                click.echo(f"[filetool] Wrote {len(_bytes)} bytes to {path}")
 
-    except (OSError, ValueError) as e:
-        click.echo(f"Error: {e}", err=True)
-        raise SystemExit(1) from e
+            if bytes_written:
+                click.echo(f"[filetool] Wrote {bytes_written} bytes to {path}")
+        except ValidationError as e:
+            # Use CLI-friendly message if available
+            raise click.ClickException(e.cli_msg or str(e)) from e
 
 
 if __name__ == "__main__":
