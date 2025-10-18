@@ -41,3 +41,6 @@ exclude = [
 filetool = [
     "py.typed",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

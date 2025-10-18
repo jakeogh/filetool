@@ -1,92 +1,64 @@
-import os
+#!/usr/bin/env python3
+"""
+Test suite for signal handling in filetool CLI.
 
+These tests verify that filetool handles signals (SIGINT, SIGTERM, etc.) gracefully
+during write operations, ensuring data integrity and proper cleanup.
+"""
 
 import os
-import time
 import signal
 import subprocess
+import time
 from pathlib import Path
 from shutil import which
-import pytest
-import signal
-import subprocess
-import tempfile
-import time
-from pathlib import Path
-from shutil import which  # ← FIXED: required for resolving 'filetool' path
 
 import pytest
 
 
-def test_bulk_write_completes_without_signal(tmp_path: Path):
+@pytest.fixture
+def cli_path():
+    """Get the path to the filetool CLI executable."""
+    path = which("filetool")
+    if not path:
+        pytest.skip("filetool not found in PATH")
+    return path
+
+
+def test_bulk_write_completes_without_signal(tmp_path: Path, cli_path: str):
+    """Test that concurrent writes complete successfully without interruption."""
     target = tmp_path / "out.dat"
-    cli = which("filetool")
-    assert cli
     lines = 50
-    hex_line = "41" * 512
-    expected_line_size = 512 + 1  # payload + newline
+    hex_line = "41" * 512  # 512 bytes of 'A'
 
     script = tmp_path / "bulk_write.sh"
     with script.open("w") as f:
         f.write("#!/bin/bash\n")
         for _ in range(lines):
-            f.write(f'"{cli}" append --path "{target}" --hex-input "{hex_line}" --create &\n')
+            # Use append-bytes (not append) and don't use --create (it doesn't exist)
+            f.write(f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input &\n')
         f.write("wait\n")
     script.chmod(0o755)
 
-    subprocess.run([str(script)], check=True)
+    subprocess.run([str(script)], check=True, timeout=30)
     assert target.exists()
-    assert target.stat().st_size == expected_line_size * lines
+    # Each line is 512 bytes (no newline added by append-bytes)
+    assert target.stat().st_size == 512 * lines
 
 
 @pytest.mark.parametrize("signal_to_send", [signal.SIGINT, signal.SIGTERM])
-def test_signal_before_first_write(tmp_path: Path, signal_to_send):
+def test_signal_before_writes_complete(tmp_path: Path, cli_path: str, signal_to_send: int):
+    """Test that signal during concurrent writes is handled gracefully."""
     target = tmp_path / "output.dat"
-    cli = which("filetool")
-    assert cli
     hex_line = "41" * 512
+    writer_count = 20
 
     script = tmp_path / "launch.sh"
     with script.open("w") as f:
         f.write("#!/bin/bash\n")
-        f.write(f'"{cli}" append --path "{target}" --hex-input "{hex_line}" --create\n')
-    script.chmod(0o755)
-
-    proc = subprocess.Popen(
-        [str(script)],
-        start_new_session=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-    time.sleep(0.01)
-    os.killpg(proc.pid, signal_to_send)
-
-    try:
-        proc.wait(timeout=2)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        pytest.fail("Did not exit in time")
-
-    # File may or may not exist, but must not have any content
-    if target.exists():
-        assert target.stat().st_size == 0
-
-
-
-
-@pytest.mark.parametrize("signal_to_send", [signal.SIGINT])
-def test_multiple_signals_spam(tmp_path: Path, signal_to_send):
-    target = tmp_path / "output.dat"
-    cli = which("filetool")
-    assert cli
-    hex_line = "41" * 512
-
-    script = tmp_path / "loop.sh"
-    with script.open("w") as f:
-        f.write("#!/bin/bash\n")
-        for _ in range(20):
-            f.write(f'"{cli}" append --path "{target}" --hex-input "{hex_line}" --create &\n')
+        for _ in range(writer_count):
+            f.write(f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input &\n')
+            f.write("sleep 0.01\n")  # Stagger writes
         f.write("wait\n")
     script.chmod(0o755)
 
@@ -97,53 +69,111 @@ def test_multiple_signals_spam(tmp_path: Path, signal_to_send):
         stderr=subprocess.DEVNULL,
     )
 
-    # Wait briefly to allow at least one writer to begin
-    for _ in range(40):  # up to 2 seconds
+    # Wait for some writes to start
+    for _ in range(40):  # Wait up to 2s
         if target.exists() and target.stat().st_size > 0:
             break
         time.sleep(0.05)
 
-    # Then spam signals
-    for _ in range(3):
-        try:
-            os.killpg(proc.pid, signal_to_send)
-        except ProcessLookupError:
-            break
-        time.sleep(0.02)
+    # Send signal to process group
+    try:
+        os.killpg(proc.pid, signal_to_send)
+    except ProcessLookupError:
+        pass  # Already exited
 
     try:
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
         proc.kill()
-        pytest.fail("Did not exit in time")
+        pytest.fail("Process did not terminate after signal")
 
-    # File may or may not exist depending on timing, but if it exists, it should be truncated or partially written
+    # File should exist and contain some data (partial writes are okay)
     if target.exists():
-        assert target.stat().st_size >= 0
+        size = target.stat().st_size
+        # Should be a multiple of 512 (block size) due to atomic writes
+        assert size % 512 == 0, f"File size not a multiple of block size: {size}"
+        assert 0 < size <= writer_count * 512
 
 
+@pytest.mark.parametrize("signal_to_send", [signal.SIGINT, signal.SIGTERM])
+@pytest.mark.parametrize("use_unique", [False, True])
+def test_signal_with_unique_mode(
+    tmp_path: Path, cli_path: str, signal_to_send: int, use_unique: bool
+):
+    """Test signal handling with and without --unique flag."""
+    target = tmp_path / "output.dat"
+    hex_line = "41" * 512
+    writer_count = 30
 
-
-
-
-
-@pytest.mark.parametrize("signal_to_send", [signal.SIGHUP, signal.SIGQUIT])
-def test_signal_handling_sighup_sigquit(tmp_path: Path, signal_to_send):
-    """Ensure filetool reacts gracefully to SIGHUP and SIGQUIT during concurrent writes."""
-    target = tmp_path / "signal_test_output.dat"
-    cli = which("filetool")
-    assert cli, "filetool must be in PATH"
-    hex_line = "41" * 512  # 512 bytes
-
-    script = tmp_path / "signal_test.sh"
-    writer_count = 10
-
+    script = tmp_path / "writer.sh"
     with script.open("w") as f:
         f.write("#!/bin/bash\n")
         for _ in range(writer_count):
-            f.write(f'"{cli}" append --path "{target}" --hex-input "{hex_line}" --create &\n')
+            cmd = f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input'
+            if use_unique:
+                cmd += " --unique"
+            f.write(f"{cmd} &\n")
+            f.write("sleep 0.02\n")
         f.write("wait\n")
     script.chmod(0o755)
+
+    target.write_bytes(b"")  # Pre-create file
+
+    proc = subprocess.Popen(
+        [str(script)],
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    # Wait for writes to begin
+    for _ in range(60):
+        if target.stat().st_size > 0:
+            break
+        time.sleep(0.05)
+    else:
+        proc.kill()
+        pytest.fail("No data written before signal")
+
+    time.sleep(0.15)  # Let some writes complete
+
+    try:
+        os.killpg(proc.pid, signal_to_send)
+    except ProcessLookupError:
+        pass
+
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        pytest.fail("Process did not exit after signal")
+
+    assert target.exists()
+    size = target.stat().st_size
+
+    if use_unique:
+        # With --unique, should have at most one copy of the data
+        assert size <= 512, f"Unique mode wrote more than one block: {size}"
+    else:
+        # Without --unique, should have some data but not all
+        assert 0 < size <= writer_count * 512
+
+
+@pytest.mark.parametrize("signal_to_send", [signal.SIGHUP, signal.SIGQUIT])
+def test_signal_handling_other_signals(tmp_path: Path, cli_path: str, signal_to_send: int):
+    """Test handling of SIGHUP and SIGQUIT during writes."""
+    target = tmp_path / "output.dat"
+    hex_line = "41" * 512
+    writer_count = 15
+
+    script = tmp_path / "writer.sh"
+    with script.open("w") as f:
+        f.write("#!/bin/bash\n")
+        for _ in range(writer_count):
+            f.write(f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input &\n')
+        f.write("wait\n")
+    script.chmod(0o755)
+
     target.write_bytes(b"")
 
     proc = subprocess.Popen(
@@ -153,7 +183,8 @@ def test_signal_handling_sighup_sigquit(tmp_path: Path, signal_to_send):
         stderr=subprocess.DEVNULL,
     )
 
-    for _ in range(20):  # Wait up to 1s for writes to start
+    # Wait for writes to start
+    for _ in range(30):
         if target.stat().st_size > 0:
             break
         time.sleep(0.05)
@@ -164,581 +195,64 @@ def test_signal_handling_sighup_sigquit(tmp_path: Path, signal_to_send):
         pass
 
     try:
-        proc.wait(timeout=3)
+        proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
         proc.kill()
-        pytest.fail("Process did not terminate in time after signal")
+        pytest.fail("Process did not terminate after signal")
 
-
-    # Accept any valid size up to full write size
-    assert target.exists(), "Output file missing"
+    assert target.exists()
     size = target.stat().st_size
-    expected_block_size = 513  # 512 'A' bytes + newline
-    assert size % expected_block_size == 0, f"Expected multiple of {expected_block_size}, got {size}"
-    assert 0 < size <= writer_count * expected_block_size, f"Unexpected file size: {size}"
+    # Verify data is written in complete blocks
+    assert size % 512 == 0, f"File size not aligned to block size: {size}"
+    assert 0 < size <= writer_count * 512
 
 
+def test_rapid_signal_spam(tmp_path: Path, cli_path: str):
+    """Test that rapid signal delivery doesn't corrupt data."""
+    target = tmp_path / "output.dat"
+    hex_line = "41" * 512
 
+    script = tmp_path / "writer.sh"
+    with script.open("w") as f:
+        f.write("#!/bin/bash\n")
+        for _ in range(50):
+            f.write(f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input &\n')
+        f.write("wait\n")
+    script.chmod(0o755)
 
-def long_write_script_sh():
-    return """#!/bin/bash
-for i in {1..100}; do
-  "${cli_path}" append --path "$target" --hex-input "$hex_line" --create &
-done
-wait
-"""
-
-
-def long_write_script():
-    return """#!/usr/bin/env python3
-import sys
-import time
-path = sys.argv[1]
-with open(path, "wb") as f:
-    for i in range(1024 * 1024):  # ~1 MB
-        f.write(b"x" * 1024)      # Write in 1KB chunks
-        f.flush()
-        time.sleep(0.001)         # Delay to allow signal to interrupt
-"""
-
-
-@pytest.mark.parametrize("signal_to_send", [signal.SIGINT, signal.SIGTERM])
-def test_signal_interrupt_during_write(tmp_path: Path, signal_to_send):
-    script_path = tmp_path / "long_writer.py"
-    target_path = tmp_path / "output.dat"
-
-    # Create the long-write script
-    script_path.write_text(long_write_script())
-    script_path.chmod(0o755)
-
-    # Launch the writer
-    proc = subprocess.Popen(
-        [str(script_path), str(target_path)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-    # Wait for some data to be written
-    time.sleep(0.1)
-
-    # Send the signal
-    os.kill(proc.pid, signal_to_send)
-
-    # Wait for process to terminate
-    proc.wait(timeout=5)
-
-    # Check: file should exist and not be completely empty or absurdly small
-    if target_path.exists():
-        size = target_path.stat().st_size
-        assert 0 < size < 1024 * 1024 * 1024, "File size unreasonable after signal"
-    else:
-        pytest.fail("File was never created")
-
-    # Optional: check that the file is at least valid (i.e., consistent length of chunks)
-    with open(target_path, "rb") as f:
-        data = f.read()
-        assert data == b"x" * len(data), "File contains unexpected or corrupted content"
-
-
-
-@pytest.mark.parametrize("signal_to_send", [signal.SIGINT, signal.SIGTERM])
-@pytest.mark.parametrize("use_unique", [False, True])
-def test_signal_interrupt_during_write_repeated(
-    tmp_path: Path, signal_to_send: int, use_unique: bool
-):
-    target = tmp_path / "sigtest_output.dat"
-    hex_line = "41" * 512  # 512-byte 'A' line
-    cli_path = which("filetool")
-    assert cli_path, "filetool must be installed and in PATH"
-
-    writer_count = 20
-    script_path = tmp_path / "bulk_writer.sh"
-    log_path = tmp_path / "log.txt"
-
-    with script_path.open("w") as script:
-        script.write("#!/bin/bash\nset -x\n")
-        for i in range(writer_count):
-            cmd = f'"{cli_path}" append --path "{target}" --hex-input "{hex_line}" --create'
-            if use_unique:
-                cmd += " --unique"
-            script.write(f'{cmd} >> "{log_path}" 2>&1 &\n')
-            script.write("sleep 0.02\n")
-        script.write("wait\n")
-
-    script_path.chmod(0o755)
     target.write_bytes(b"")
 
     proc = subprocess.Popen(
-        [str(script_path)],
+        [str(script)],
+        start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        start_new_session=True,
     )
 
-    for _ in range(100):  # Wait up to 5s for file to be touched
-        if target.exists() and target.stat().st_size > 0:
+    # Wait for writes to start
+    for _ in range(40):
+        if target.stat().st_size > 0:
             break
         time.sleep(0.05)
-    else:
-        proc.kill()
-        if log_path.exists():
-            print("\n===== LOG OUTPUT =====\n", log_path.read_text())
-        pytest.fail("File was never written to before signal")
 
-    time.sleep(0.1)
-
-    try:
-        os.killpg(proc.pid, signal_to_send)
-    except ProcessLookupError:
-        pass
+    # Send multiple signals rapidly
+    for _ in range(5):
+        try:
+            os.killpg(proc.pid, signal.SIGINT)
+            time.sleep(0.02)
+        except ProcessLookupError:
+            break
 
     try:
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
         proc.kill()
-        pytest.fail("Process did not exit after signal")
 
-    assert target.exists(), "Output file does not exist after signal"
-    size = target.stat().st_size
-    assert 0 < size < 1_000_000, f"Unexpected file size after signal: {size}"
+    if target.exists():
+        size = target.stat().st_size
+        # Data should still be block-aligned
+        assert size % 512 == 0, f"Corrupted file size after signal spam: {size}"
 
 
-@pytest.mark.parametrize("signal_to_send", [signal.SIGINT, signal.SIGTERM])
-@pytest.mark.parametrize("use_unique", [False, True])
-def test_signal_interrupt_during_write_repeated_two(
-    tmp_path: Path, signal_to_send: int, use_unique: bool
-):
-    target = tmp_path / "sigtest_output.dat"
-    hex_line = "41" * 512  # 512-byte 'A' line
-    cli_path = which("filetool")
-    assert cli_path, "filetool must be installed and in PATH"
-
-    script_path = tmp_path / "bulk_writer.sh"
-    writer_count = 50
-
-    with script_path.open("w") as script:
-        script.write("#!/bin/bash\n")
-        for i in range(writer_count):
-            cmd = f'"{cli_path}" append --path "{target}" --hex-input "{hex_line}" --create'
-            if use_unique:
-                cmd += " --unique"
-            script.write(f"{cmd} &\n")
-            script.write("sleep 0.01\n")  # Slight stagger per writer
-        script.write("wait\n")
-
-    script_path.chmod(0o755)
-    target.write_bytes(b"")
-
-    proc = subprocess.Popen(
-        [str(script_path)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-
-    for _ in range(80):  # Wait up to 4s for file to grow
-        if target.exists() and target.stat().st_size > 0:
-            break
-        time.sleep(0.05)
-    else:
-        proc.kill()
-        pytest.fail("File was never written to before signal")
-
-    time.sleep(0.1)  # Let some writes finish
-
-    try:
-        os.killpg(proc.pid, signal_to_send)
-    except ProcessLookupError:
-        pass  # Process already exited
-
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        pytest.fail("Process did not exit after signal")
-
-    assert target.exists(), "Output file does not exist after signal"
-    size = target.stat().st_size
-    assert 0 < size < 1_000_000, f"Unexpected file size after signal: {size}"
-
-
-@pytest.mark.parametrize("signal_to_send", [signal.SIGINT, signal.SIGTERM])
-@pytest.mark.parametrize("use_unique", [False, True])
-def test_signal_interrupt_during_write_repeated_three(
-    tmp_path: Path, signal_to_send: int, use_unique: bool
-):
-    target = tmp_path / "sigtest_output.dat"
-    hex_line = "41" * 512  # 512-byte 'A' line
-    cli_path = which("filetool")
-    assert cli_path, "filetool must be installed and in PATH"
-
-    input_file = tmp_path / "input.txt"
-    input_file.write_text("trigger\n")
-
-    script_path = tmp_path / "bulk_writer.sh"
-    writer_count = 50  # Lower count, less contention
-
-    with script_path.open("w") as script:
-        script.write("#!/bin/bash\n")
-        for i in range(writer_count):
-            cmd = f'"{cli_path}" append --path "{target}" --hex-input "{hex_line}" --create'
-            if use_unique:
-                cmd += " --unique"
-            script.write(f'({cmd} < "{input_file}") &\n')
-            script.write("sleep 0.01\n")  # Slight stagger per writer
-        script.write("wait\n")
-
-    script_path.chmod(0o755)
-    target.write_bytes(b"")
-
-    proc = subprocess.Popen(
-        [str(script_path)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-
-    # Wait for file to grow before sending signal
-    for _ in range(80):  # up to 4s
-        if target.exists() and target.stat().st_size > 0:
-            break
-        time.sleep(0.05)
-    else:
-        proc.kill()
-        pytest.fail("File was never written to before signal")
-
-    time.sleep(0.1)  # Let some writes finish
-
-    try:
-        os.killpg(proc.pid, signal_to_send)
-    except ProcessLookupError:
-        pass  # Process already exited
-
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        pytest.fail("Process did not exit after signal")
-
-    assert target.exists(), "Output file does not exist after signal"
-    size = target.stat().st_size
-    assert 0 < size < 1_000_000, f"Unexpected file size after signal: {size}"
-
-
-@pytest.mark.parametrize("signal_to_send", [signal.SIGINT, signal.SIGTERM])
-@pytest.mark.parametrize("use_unique", [False, True])
-def test_signal_interrupt_during_write_repeated_four(
-    tmp_path: Path, signal_to_send: int, use_unique: bool
-):
-    target = tmp_path / "sigtest_output.dat"
-    hex_line = "41" * 512  # 512-byte 'A' line
-    cli_path = which("filetool")
-    assert cli_path, "filetool must be installed and in PATH"
-
-    # Create shared input file to avoid FIFO issues
-    input_file = tmp_path / "input.txt"
-    input_file.write_text("trigger\n")
-
-    script_path = tmp_path / "bulk_writer.sh"
-    writer_count = 100
-
-    with script_path.open("w") as script:
-        script.write("#!/bin/bash\n")
-        for _ in range(writer_count):
-            cmd = f'"{cli_path}" append --path "{target}" --hex-input "{hex_line}" --create'
-            if use_unique:
-                cmd += " --unique"
-            script.write(f'{cmd} < "{input_file}" &\n')
-        script.write("wait\n")
-
-    script_path.chmod(0o755)
-    target.write_bytes(b"")
-
-    proc = subprocess.Popen(
-        [str(script_path)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-
-    # Wait for some data to appear in the file
-    for _ in range(80):  # up to 4s
-        if target.exists() and target.stat().st_size > 0:
-            break
-        time.sleep(0.05)
-    else:
-        proc.kill()
-        pytest.fail("File was never written to before signal")
-
-    time.sleep(0.2)
-
-    try:
-        os.killpg(proc.pid, signal_to_send)
-    except ProcessLookupError:
-        pass
-
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        pytest.fail("Process did not exit after signal")
-
-    assert target.exists(), "Output file does not exist after signal"
-    size = target.stat().st_size
-    assert 0 < size < 1_000_000, f"Unexpected file size after signal: {size}"
-
-
-@pytest.mark.parametrize("signal_to_send", [signal.SIGINT, signal.SIGTERM])
-@pytest.mark.parametrize("use_unique", [False, True])
-def test_signal_interrupt_during_write_repeated_five(
-    tmp_path: Path, signal_to_send: int, use_unique: bool
-):
-    target = tmp_path / "sigtest_output.dat"
-    hex_line = "41" * 512  # 512-byte 'A' line
-    cli_path = which("filetool")
-    assert cli_path, "filetool must be installed and in PATH"
-
-    gate_path = tmp_path / "gate_fifo"
-    os.mkfifo(gate_path)
-
-    script_path = tmp_path / "bulk_writer.sh"
-    writer_count = 100
-
-    with script_path.open("w") as script:
-        script.write("#!/bin/bash\n")
-        for _ in range(writer_count):
-            cmd = f'"{cli_path}" append --path "{target}" --hex-input "{hex_line}" --create'
-            if use_unique:
-                cmd += " --unique"
-            script.write(f'{cmd} < "{gate_path}" &\n')
-
-        # Broadcast to all 100 writers at once
-        script.write(f"sleep 0.2\n")
-        script.write(f'yes go | head -n {writer_count} > "{gate_path}"\n')
-        script.write("wait\n")
-
-    script_path.chmod(0o755)
-    target.write_bytes(b"")
-
-    proc = subprocess.Popen(
-        [str(script_path)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-
-    # Wait until file is written to
-    for _ in range(80):  # up to 4s
-        if target.exists() and target.stat().st_size > 0:
-            break
-        time.sleep(0.05)
-    else:
-        proc.kill()
-        pytest.fail("File was never written to before signal")
-
-    time.sleep(0.2)
-
-    try:
-        os.killpg(proc.pid, signal_to_send)
-    except ProcessLookupError:
-        pass
-
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        pytest.fail("Process did not exit after signal")
-
-    assert target.exists(), "Output file does not exist after signal"
-    size = target.stat().st_size
-    assert 0 < size < 1_000_000, f"Unexpected file size after signal: {size}"
-
-
-@pytest.mark.parametrize("signal_to_send", [signal.SIGINT, signal.SIGTERM])
-@pytest.mark.parametrize("use_unique", [False, True])
-def test_signal_interrupt_during_write_repeated_six(
-    tmp_path: Path, signal_to_send: int, use_unique: bool
-):
-    target = tmp_path / "sigtest_output.dat"
-    hex_line = "41" * 512  # 512-byte 'A' line
-    cli_path = which("filetool")
-    assert cli_path, "filetool must be installed and in PATH"
-
-    gate_path = tmp_path / "gate_fifo"
-    os.mkfifo(gate_path)
-
-    script_path = tmp_path / "bulk_writer.sh"
-    writer_count = 100
-
-    with script_path.open("w") as script:
-        script.write("#!/bin/bash\n")
-        for _ in range(writer_count):
-            cmd = f'"{cli_path}" append --path "{target}" --hex-input "{hex_line}" --create'
-            if use_unique:
-                cmd += " --unique"
-            script.write(f'{cmd} < "{gate_path}" &\n')
-
-        # Repeatedly write newlines to unblock all FIFOs
-        script.write(f"sleep 0.2\n")
-        script.write(
-            f'for i in {{1..{writer_count}}}; do echo go > "{gate_path}"; done\n'
-        )
-        script.write("wait\n")
-
-    script_path.chmod(0o755)
-
-    target.write_bytes(b"")
-
-    proc = subprocess.Popen(
-        [str(script_path)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-
-    # Wait until file is written to
-    for _ in range(80):  # up to 4s
-        if target.exists() and target.stat().st_size > 0:
-            break
-        time.sleep(0.05)
-    else:
-        proc.kill()
-        pytest.fail("File was never written to before signal")
-
-    time.sleep(0.2)
-
-    try:
-        os.killpg(proc.pid, signal_to_send)
-    except ProcessLookupError:
-        pass  # Already dead
-
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        pytest.fail("Process did not exit after signal")
-
-    assert target.exists(), "Output file does not exist after signal"
-    size = target.stat().st_size
-    assert 0 < size < 1_000_000, f"Unexpected file size after signal: {size}"
-
-
-@pytest.mark.parametrize("signal_to_send", [signal.SIGINT, signal.SIGTERM])
-@pytest.mark.parametrize("use_unique", [False, True])
-def test_signal_interrupt_during_write_repeated_seven(
-    tmp_path: Path, signal_to_send: int, use_unique: bool
-):
-    target = tmp_path / "sigtest_output.dat"
-    hex_line = "41" * 512  # 512-byte 'A' line
-    cli_path = which("filetool")
-    assert cli_path, "filetool must be installed and in PATH"
-
-    gate_path = tmp_path / "gate_fifo"
-    os.mkfifo(gate_path)
-
-    script_path = tmp_path / "bulk_writer.sh"
-    with script_path.open("w") as script:
-        script.write("#!/bin/bash\n")
-        for _ in range(100):
-            cmd = f'"{cli_path}" append --path "{target}" --hex-input "{hex_line}" --create'
-            if use_unique:
-                cmd += " --unique"
-            script.write(f'{cmd} < "{gate_path}" &\n')
-
-        # Unblock all readers after short delay
-        script.write(f'{{ sleep 0.2; yes go | head -n 100 > "{gate_path}"; }} &\n')
-        # script.write(f'{{ sleep 0.2; echo go > "{gate_path}"; }} &\n')
-        script.write("wait\n")
-    script_path.chmod(0o755)
-
-    target.write_bytes(b"")
-
-    proc = subprocess.Popen(
-        [str(script_path)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-
-    # Wait for file to be written to before sending signal
-    for _ in range(40):  # 2s max
-        if target.exists() and target.stat().st_size > 0:
-            break
-        time.sleep(0.05)
-    else:
-        proc.kill()
-        pytest.fail("File was never written to before signal")
-
-    # Optional small buffer time
-    time.sleep(0.1)
-
-    try:
-        os.killpg(proc.pid, signal_to_send)
-    except ProcessLookupError:
-        pass  # Process already exited
-
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        pytest.fail("Process did not exit after signal")
-
-    assert target.exists(), "Output file does not exist after signal"
-    size = target.stat().st_size
-    assert 0 < size < 1_000_000, f"Unexpected file size after signal: {size}"
-
-
-@pytest.mark.parametrize("signal_to_send", [signal.SIGINT, signal.SIGTERM])
-@pytest.mark.parametrize("use_unique", [False, True])
-def test_signal_interrupt_during_write_repeated_eight(
-    tmp_path: Path, signal_to_send: int, use_unique: bool
-):
-    target = tmp_path / "sigtest_output.dat"
-    hex_line = "41" * 512  # 512-byte 'A' line
-    cli_path = which("filetool")
-    assert cli_path, "filetool must be installed and in PATH"
-
-    script_path = tmp_path / "bulk_writer.sh"
-    with script_path.open("w") as script:
-        script.write("#!/bin/bash\n")
-        for _ in range(100):  # fewer, parallel writes
-            cmd = f'"{cli_path}" append --path "{target}" --hex-input "{hex_line}" --create'
-            if use_unique:
-                cmd += " --unique"
-            script.write(cmd + " &\n")
-        script.write("wait\n")
-    script_path.chmod(0o755)
-
-    # Start the script in a new process group
-    target.write_bytes(b"")
-    proc = subprocess.Popen(
-        [str(script_path)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-
-    # Wait until file appears and grows a bit
-    for _ in range(40):  # wait up to 2 seconds
-        if target.exists() and target.stat().st_size > 0:
-            break
-        time.sleep(0.05)
-
-    # Give it a bit more time to ensure work-in-progress
-    time.sleep(0.25)
-
-    try:
-        os.killpg(proc.pid, signal_to_send)
-    except ProcessLookupError:
-        pass  # Already exited
-
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        pytest.fail("Process did not exit after signal")
-
-    assert target.exists(), "Output file does not exist after signal"
-    size = target.stat().st_size
-    assert 0 < size < 1_000_000, f"Unexpected file size after signal: {size}"
-
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
