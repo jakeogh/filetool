@@ -477,8 +477,15 @@ def ensure_bytes_present(
 
     If `unique_bytes` is True:
         - Reads the entire file into memory.
-        - Compares each logical line (parsed via `splitlines_bytes`) to `bytes_payload`.
-        - Only appends `bytes_payload` if it is not present.
+        - If `line_ending` is provided:
+            - Parses the file into logical lines using `splitlines_bytes()`.
+            - Compares each line to `bytes_payload`, respecting comment markers and whitespace options.
+            - Only appends `bytes_payload` if no matching line is found.
+        - If `line_ending` is None:
+            - Performs binary substring search using `find_bytes_offset_in_stream()`.
+            - Only appends `bytes_payload` if the exact byte sequence is not found anywhere in the file.
+            - Note: `comment_marker`, `ignore_leading_whitespace`, and `ignore_trailing_whitespace`
+              have no effect when `line_ending=None` (binary mode).
 
     This function:
         - Uses a SHA256-based global lockfile in `/tmp/filetool-locks` to ensure only one process modifies `path` at a time.
@@ -503,7 +510,6 @@ def ensure_bytes_present(
         },
         "unique_bytes": {
             "type": bool,
-            # "requires_nonempty": ["line_ending"],  # line_ending=None causes binary substring search
         },
         "create_if_missing": {
             "type": bool,
@@ -587,7 +593,6 @@ def ensure_bytes_present(
                         target=bytes_payload,
                         chunk_size=8192,
                     )
-                    print(f"{_offset}")
                     if _offset is not None:
                         return 0
 
