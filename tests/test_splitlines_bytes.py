@@ -7,7 +7,6 @@ import random
 import sys
 from typing import BinaryIO
 
-import pysnooper
 import pytest
 
 from filetool import splitlines_bytes  # make sure filetool.py is on your PYTHONPATH
