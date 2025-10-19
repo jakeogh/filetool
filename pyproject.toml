@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "filetool"
-version = "0.1"
+version = "0.0.1760910191"
 description = "Common file operations"
 authors = [
     { name = "Justin Keogh", email = "github.com@v6y.net" },
@@ -17,10 +17,8 @@ dependencies = [
     "pytest",
     "hypothesis",
 ]
+license = "ISC"
 requires-python = ">=3.11"
-
-[project.license]
-text = "ISC"
 
 [project.urls]
 Homepage = "https://github.com/jakeogh/filetool"
