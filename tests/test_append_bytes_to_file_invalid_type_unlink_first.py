@@ -1,5 +1,6 @@
-import pytest
 from pathlib import Path
+
+import pytest
 from filetool import append_bytes_to_file
 
 

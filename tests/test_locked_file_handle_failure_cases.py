@@ -30,7 +30,10 @@ def temp_file():
     ],
 )
 def test_fh_close_failure_does_not_release_lock_param(
-    temp_file, capsys, which_fn, expect_close_exception
+    temp_file,
+    capsys,
+    which_fn,
+    expect_close_exception,
 ):
     real_open = open
     recorded_fh = {}
@@ -45,10 +48,20 @@ def test_fh_close_failure_does_not_release_lock_param(
     with mock.patch("builtins.open", wrapped_open):
         if expect_close_exception:
             with pytest.raises(OSError, match="close failed"):
-                with which_fn(path=temp_file, mode="rb+", blocking=True, create=True) as fh:
+                with which_fn(
+                    path=temp_file,
+                    mode="rb+",
+                    blocking=True,
+                    create=True,
+                ) as fh:
                     fh.write(b"x")
         else:
-            with which_fn(path=temp_file, mode="rb+", blocking=True, create=True) as fh:
+            with which_fn(
+                path=temp_file,
+                mode="rb+",
+                blocking=True,
+                create=True,
+            ) as fh:
                 fh.write(b"x")
 
     recorded_fh["handle"].close.assert_called_once()
@@ -58,7 +71,12 @@ def test_fh_close_failure_does_not_release_lock_param(
         assert "Warning: error during final cleanup of file" in out.err
         assert "close failed" in out.err
 
-    with which_fn(path=temp_file, mode="rb+", blocking=True, create=False) as fh2:
+    with which_fn(
+        path=temp_file,
+        mode="rb+",
+        blocking=True,
+        create=False,
+    ) as fh2:
         fh2.write(b"y")
 
     if "handle" in recorded_fh:
@@ -66,17 +84,23 @@ def test_fh_close_failure_does_not_release_lock_param(
             recorded_fh["handle"].close = f.close
     gc.collect()
 
-    if 'fh' in locals():
+    if "fh" in locals():
         del fh
     gc.collect()
 
 
 def test_unlock_fails_but_close_succeeds(temp_file):
-    with mock.patch(
-        "fcntl.flock", side_effect=[None, OSError("unlock failed")]
-    ) as mock_flock, mock.patch("builtins.print") as mock_print:
+    with (
+        mock.patch(
+            "fcntl.flock", side_effect=[None, OSError("unlock failed")]
+        ) as mock_flock,
+        mock.patch("builtins.print") as mock_print,
+    ):
         with locked_file_handle(
-            path=temp_file, mode="rb+", blocking=True, create=True
+            path=temp_file,
+            mode="rb+",
+            blocking=True,
+            create=True,
         ) as fh:
             fh.write(b"test")
 
@@ -92,7 +116,7 @@ def test_unlock_fails_but_close_succeeds(temp_file):
             handle.close = f.close
     gc.collect()
 
-    if 'fh' in locals():
+    if "fh" in locals():
         del fh
     gc.collect()
 
@@ -124,15 +148,26 @@ def test_unlock_and_close_both_fail_param(
 
     flock_side_effect = [None, OSError("unlock failed")]
 
-    with mock.patch("builtins.open", wrapped_open), mock.patch(
-        "fcntl.flock", side_effect=flock_side_effect
+    with (
+        mock.patch("builtins.open", wrapped_open),
+        mock.patch("fcntl.flock", side_effect=flock_side_effect),
     ):
         if expect_exception:
             with pytest.raises(OSError, match="close failed"):
-                with which_fn(path=temp_file, mode="rb+", blocking=True, create=True) as fh:
+                with which_fn(
+                    path=temp_file,
+                    mode="rb+",
+                    blocking=True,
+                    create=True,
+                ) as fh:
                     fh.write(b"payload")
         else:
-            with which_fn(path=temp_file, mode="rb+", blocking=True, create=True) as fh:
+            with which_fn(
+                path=temp_file,
+                mode="rb+",
+                blocking=True,
+                create=True,
+            ) as fh:
                 fh.write(b"payload")
 
     recorded_fh["handle"].close.assert_called_once()
@@ -154,6 +189,6 @@ def test_unlock_and_close_both_fail_param(
             recorded_fh["handle"].close = f.close
     gc.collect()
 
-    if 'fh' in locals():
+    if "fh" in locals():
         del fh
     gc.collect()

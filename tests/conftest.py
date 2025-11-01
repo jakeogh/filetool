@@ -1,18 +1,31 @@
 # conftest.py
-import pytest
 import sys
+
+import pytest
 from click.testing import Result
 
 _seen_results = []
 
-def _track_result_init(self, *args, **kwargs):
-    _original_result_init(self, *args, **kwargs)
+
+def _track_result_init(
+    self,
+    *args,
+    **kwargs,
+):
+    _original_result_init(
+        self,
+        *args,
+        **kwargs,
+    )
     _seen_results.append(self)
+
 
 _original_result_init = Result.__init__
 
+
 def pytest_configure(config):
     Result.__init__ = _track_result_init
+
 
 def pytest_runtest_makereport(item, call):
     if call.when == "call" and call.excinfo:
@@ -32,4 +45,3 @@ def pytest_runtest_makereport(item, call):
                 print("\n[CliRunner Output (combined)]", file=sys.stderr)
                 print(result.output, file=sys.stderr)
         _seen_results.clear()
-

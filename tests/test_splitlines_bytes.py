@@ -8,33 +8,32 @@ import sys
 from typing import BinaryIO
 
 import pytest
-
-from filetool import splitlines_bytes  # make sure filetool.py is on your PYTHONPATH
-
-
-
-
+from filetool import \
+    splitlines_bytes  # make sure filetool.py is on your PYTHONPATH
 
 
 def test_comment_marker_inside_data_not_split():
     data = b"abc##def#ghi##jkl"
     result = list(splitlines_bytes(data, delim=b"##", comment_marker=b"#"))
-    assert result == [b"abc##", b'def##', b'jkl']
+    assert result == [b"abc##", b"def##", b"jkl"]
+
 
 def test_empty_comment_marker_error():
     with pytest.raises(ValueError):
         list(splitlines_bytes(b"abc", comment_marker=b"", delim=b"\n"))
 
+
 def test_splitlines_bytes_overlap_comment_in_delim():
-    data = b'payload###comment##next'
-    delim = b'##'
-    comment_marker = b'#'
+    data = b"payload###comment##next"
+    delim = b"##"
+    comment_marker = b"#"
     strip_leading = False
     strip_trailing = False
 
-    expected = [b'payload##', b'##', b'next']
+    expected = [b"payload##", b"##", b"next"]
 
     from filetool import splitlines_bytes
+
     from test_splitlines_bytes import reference_split
 
     # Reference implementation
@@ -48,13 +47,15 @@ def test_splitlines_bytes_overlap_comment_in_delim():
     assert ref == expected, f"reference_split mismatch: {ref} != {expected}"
 
     # Actual implementation
-    actual = list(splitlines_bytes(
-        data,
-        delim=delim,
-        comment_marker=comment_marker,
-        strip_leading_whitespace=strip_leading,
-        strip_trailing_whitespace=strip_trailing,
-    ))
+    actual = list(
+        splitlines_bytes(
+            data,
+            delim=delim,
+            comment_marker=comment_marker,
+            strip_leading_whitespace=strip_leading,
+            strip_trailing_whitespace=strip_trailing,
+        )
+    )
     assert actual == expected, f"splitlines_bytes mismatch: {actual} != {expected}"
 
 
@@ -63,12 +64,15 @@ def test_comment_marker_contains_delim_raises_value_error():
     If the delimiter is a substring of the comment marker, comment stripping becomes impossible.
     This test ensures a ValueError is raised in that case.
     """
-    with pytest.raises(ValueError, match="delim must not be contained in comment_marker"):
-        list(splitlines_bytes(
-            data=b"payload###comment##next",
-            delim=b"#",
-            comment_marker=b"##"
-        ))
+    with pytest.raises(
+        ValueError, match="delim must not be contained in comment_marker"
+    ):
+        list(
+            splitlines_bytes(
+                data=b"payload###comment##next", delim=b"#", comment_marker=b"##"
+            )
+        )
+
 
 def test_only_delimiter_present():
     data = b"\n"
@@ -83,13 +87,16 @@ def test_just_comment_stripped():
 
 
 def test_long_patterny():
-    data = (b"x#cmt\n" * 5000)
+    data = b"x#cmt\n" * 5000
     result = list(splitlines_bytes(data, comment_marker=b"#"))
     assert all(x.endswith(b"\n") for x in result)
 
+
 def test_splitlines_bytes_stream_long_repeated_pattern():
     data = (b"line\n" * 100) + b"#finalcomment\n"
-    expected = [b"line\n"] * 100 + [b'\n']  # final comment becomes empty but '\n' is re-added
+    expected = [b"line\n"] * 100 + [
+        b"\n"
+    ]  # final comment becomes empty but '\n' is re-added
 
     stream = io.BytesIO(data)
     result = list(
@@ -114,13 +121,15 @@ def test_comment_marker_only_strips_after_split():
     delim = b"\x00"
     comment_marker = b"#"
     expected = [b"abc\x00", b"\x00", b"def\x00"]
-    actual = list(splitlines_bytes(
-        data=data,
-        delim=delim,
-        comment_marker=comment_marker,
-        strip_leading_whitespace=False,
-        strip_trailing_whitespace=False,
-    ))
+    actual = list(
+        splitlines_bytes(
+            data=data,
+            delim=delim,
+            comment_marker=comment_marker,
+            strip_leading_whitespace=False,
+            strip_trailing_whitespace=False,
+        )
+    )
     assert actual == expected
 
 
@@ -140,11 +149,11 @@ def test_comment_marker_not_applied_cross_segment():
 
 def test_whitespace_only_segments_with_stripping():
     data = b"  \n\t\nval\n"
-    result = list(splitlines_bytes(
-        data,
-        strip_leading_whitespace=True,
-        strip_trailing_whitespace=True
-    ))
+    result = list(
+        splitlines_bytes(
+            data, strip_leading_whitespace=True, strip_trailing_whitespace=True
+        )
+    )
     assert result == [b"\n", b"\n", b"val\n"]
 
 
@@ -160,7 +169,6 @@ def test_comment_marker_with_null_byte_delim():
     assert result == [b"abc\x00", b"\x00", b"visible"]
 
 
-
 def test_similar_delim_and_comment_not_confused():
     data = b"a##b##c"
     result = list(splitlines_bytes(data, delim=b"##", comment_marker=b"#"))
@@ -169,7 +177,9 @@ def test_similar_delim_and_comment_not_confused():
 
 def test_strip_whitespace_before_comment():
     data = b"   val #c\n"
-    result = list(splitlines_bytes(data, comment_marker=b"#", strip_leading_whitespace=True))
+    result = list(
+        splitlines_bytes(data, comment_marker=b"#", strip_leading_whitespace=True)
+    )
     assert result == [b"val \n"]
 
 
@@ -182,12 +192,14 @@ def test_final_empty_segment_not_emitted():
 def test_comment_marker_contains_reversed_delim_is_ok():
     data = b"val/##/cmt/#next"
     result = list(splitlines_bytes(data, delim=b"/#", comment_marker=b"#/"))
-    assert result == [b'val/#', b'/#', b'next']
+    assert result == [b"val/#", b"/#", b"next"]
+
 
 def test_trailing_comment_without_delimiter():
     data = b"value#comment"
     result = list(splitlines_bytes(data, comment_marker=b"#"))
     assert result == [b"value"]
+
 
 def test_binary_data_around_comment():
     data = b"\x00\xffvalue#comment\nnext"
@@ -201,24 +213,25 @@ def test_binary_data_in_comment_is_stripped():
     assert result == [b"value\n", b"next"]
 
 
-
 def test_trailing_delim_retains_empty_segment():
     data = b"one|two|"
     result = list(splitlines_bytes(data, delim=b"|"))
     assert result == [b"one|", b"two|"]
 
+
 def test_first_line_comment_stripped():
     data = b"#fullcomment\npayload\n"
     result = list(splitlines_bytes(data, comment_marker=b"#"))
-    assert result == [b'\n', b'payload\n']
+    assert result == [b"\n", b"payload\n"]
 
 
 # this triggers a current bug
 def test_whitespace_line_with_marker_only():
     data = b"   #foo\n"
-    result = list(splitlines_bytes(data, comment_marker=b"#", strip_leading_whitespace=True))
-    assert result == [b'\n']
-
+    result = list(
+        splitlines_bytes(data, comment_marker=b"#", strip_leading_whitespace=True)
+    )
+    assert result == [b"\n"]
 
 
 # attempt to fuzz the above failing test case before fixing the bug
@@ -285,6 +298,8 @@ def test_fuzz_trigger_comment_strip_empty(case):
 
 def run_splitlines_bytes(data: bytes | BinaryIO, **kwargs) -> list[bytes]:
     return list(splitlines_bytes(data, **kwargs))
+
+
 def generate_stream(data: bytes) -> BinaryIO:
     return io.BufferedReader(io.BytesIO(data))
 
@@ -329,7 +344,9 @@ def test_strip_trailing_ws_bytes():
 
 def test_both_strip_bytes():
     assert run_splitlines_bytes(
-        b"  a \n  b \n", strip_leading_whitespace=True, strip_trailing_whitespace=True
+        b"  a \n  b \n",
+        strip_leading_whitespace=True,
+        strip_trailing_whitespace=True,
     ) == [b"a\n", b"b\n"]
 
 
@@ -459,7 +476,6 @@ def test_fuzz_splitlines_bytes_stream():
                 )
 
 
-
 # ----------------------------
 # Fuzz Test 3: Targeted edge-case patterns
 # ----------------------------
@@ -510,7 +526,7 @@ def test_fuzz_splitlines_bytes_edge_cases():
                         )
 
 
-#def test_fuzz_splitlines_bytes_edge_cases():
+# def test_fuzz_splitlines_bytes_edge_cases():
 #    known_inputs = [
 #        b"",
 #        b"\x00\x01\x00\x02",
@@ -758,7 +774,11 @@ def test_empty_segments_with_whitespace_stripping():
 # explicit byte checked fuzzing
 
 
-def trace_vars(frame, event, arg):
+def trace_vars(
+    frame,
+    event,
+    arg,
+):
     if event == "line":
         local_vars = frame.f_locals.copy()
         print(f"[{frame.f_lineno}] {frame.f_code.co_name}: {local_vars}")
@@ -975,8 +995,6 @@ def test_splitlines_bytes_fuzz_against_reference_binaryio_over_all_chunk_size(
     ), f"Mismatch for BinaryIO case: {case} with chunk_size={chunk_size}"
 
 
-
-
 def test_splitlines_bytes_bug_case_comment_split():
     data = b"A#B##C###D"
     delim = b"##"
@@ -990,10 +1008,3 @@ def test_splitlines_bytes_bug_case_comment_split():
         )
     )
     assert actual == expected, f"Expected {expected}, got {actual}"
-
-
-
-
-
-
-

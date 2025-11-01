@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 import os
 import tempfile
-import pytest
 from pathlib import Path
 
+import pytest
 # Assuming filetool.py is in the same directory or importable
 from filetool import append_bytes_to_file
-
 
 
 def test_filetool_triggers_create_with_wronly_mode():

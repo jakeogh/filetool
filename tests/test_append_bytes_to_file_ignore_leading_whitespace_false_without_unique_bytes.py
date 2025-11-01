@@ -1,6 +1,8 @@
-import pytest
 from pathlib import Path
+
+import pytest
 from filetool import append_bytes_to_file
+
 
 def test_append_bytes_to_file_ignore_leading_whitespace_false_without_unique_bytes():
     append_bytes_to_file(

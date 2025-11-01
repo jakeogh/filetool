@@ -1,6 +1,8 @@
-import pytest
 from pathlib import Path
+
+import pytest
 from filetool import append_bytes_to_file
+
 
 def test_append_bytes_to_file_invalid_type_make_parents():
     with pytest.raises(TypeError, match=r"make_parents must be of type <class 'bool'>"):

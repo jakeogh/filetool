@@ -1,6 +1,8 @@
-import pytest
 from pathlib import Path
+
+import pytest
 from filetool import append_bytes_to_file
+
 
 def test_append_bytes_to_file_invalid_type_unique_bytes():
     with pytest.raises(TypeError, match=r"unique_bytes must be of type <class 'bool'>"):

@@ -36,18 +36,28 @@ def test_bulk_write_completes_without_signal(tmp_path: Path, cli_path: str):
         f.write("#!/bin/bash\n")
         for _ in range(lines):
             # Use append-bytes (not append) and don't use --create (it doesn't exist)
-            f.write(f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input &\n')
+            f.write(
+                f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input &\n'
+            )
         f.write("wait\n")
     script.chmod(0o755)
 
-    subprocess.run([str(script)], check=True, timeout=30)
+    subprocess.run(
+        [str(script)],
+        check=True,
+        timeout=30,
+    )
     assert target.exists()
     # Each line is 512 bytes (no newline added by append-bytes)
     assert target.stat().st_size == 512 * lines
 
 
 @pytest.mark.parametrize("signal_to_send", [signal.SIGINT, signal.SIGTERM])
-def test_signal_before_writes_complete(tmp_path: Path, cli_path: str, signal_to_send: int):
+def test_signal_before_writes_complete(
+    tmp_path: Path,
+    cli_path: str,
+    signal_to_send: int,
+):
     """Test that signal during concurrent writes is handled gracefully."""
     target = tmp_path / "output.dat"
     hex_line = "41" * 512
@@ -57,7 +67,9 @@ def test_signal_before_writes_complete(tmp_path: Path, cli_path: str, signal_to_
     with script.open("w") as f:
         f.write("#!/bin/bash\n")
         for _ in range(writer_count):
-            f.write(f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input &\n')
+            f.write(
+                f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input &\n'
+            )
             f.write("sleep 0.01\n")  # Stagger writes
         f.write("wait\n")
     script.chmod(0o755)
@@ -98,7 +110,10 @@ def test_signal_before_writes_complete(tmp_path: Path, cli_path: str, signal_to_
 @pytest.mark.parametrize("signal_to_send", [signal.SIGINT, signal.SIGTERM])
 @pytest.mark.parametrize("use_unique", [False, True])
 def test_signal_with_unique_mode(
-    tmp_path: Path, cli_path: str, signal_to_send: int, use_unique: bool
+    tmp_path: Path,
+    cli_path: str,
+    signal_to_send: int,
+    use_unique: bool,
 ):
     """Test signal handling with and without --unique flag."""
     target = tmp_path / "output.dat"
@@ -109,7 +124,9 @@ def test_signal_with_unique_mode(
     with script.open("w") as f:
         f.write("#!/bin/bash\n")
         for _ in range(writer_count):
-            cmd = f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input'
+            cmd = (
+                f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input'
+            )
             if use_unique:
                 cmd += " --unique"
             f.write(f"{cmd} &\n")
@@ -160,7 +177,11 @@ def test_signal_with_unique_mode(
 
 
 @pytest.mark.parametrize("signal_to_send", [signal.SIGHUP, signal.SIGQUIT])
-def test_signal_handling_other_signals(tmp_path: Path, cli_path: str, signal_to_send: int):
+def test_signal_handling_other_signals(
+    tmp_path: Path,
+    cli_path: str,
+    signal_to_send: int,
+):
     """Test handling of SIGHUP and SIGQUIT during writes."""
     target = tmp_path / "output.dat"
     hex_line = "41" * 512
@@ -170,7 +191,9 @@ def test_signal_handling_other_signals(tmp_path: Path, cli_path: str, signal_to_
     with script.open("w") as f:
         f.write("#!/bin/bash\n")
         for _ in range(writer_count):
-            f.write(f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input &\n')
+            f.write(
+                f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input &\n'
+            )
         f.write("wait\n")
     script.chmod(0o755)
 
@@ -216,7 +239,9 @@ def test_rapid_signal_spam(tmp_path: Path, cli_path: str):
     with script.open("w") as f:
         f.write("#!/bin/bash\n")
         for _ in range(50):
-            f.write(f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input &\n')
+            f.write(
+                f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input &\n'
+            )
         f.write("wait\n")
     script.chmod(0o755)
 

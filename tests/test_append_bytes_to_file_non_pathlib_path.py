@@ -1,6 +1,7 @@
 import pytest
 from filetool import append_bytes_to_file
 
+
 def test_append_bytes_to_file_non_pathlib_path():
     with pytest.raises(TypeError, match=r"path must be of type .*Path"):
         append_bytes_to_file(

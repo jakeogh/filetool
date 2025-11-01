@@ -15,17 +15,22 @@ from unittest import mock
 import pytest
 from filetool import locked_file_handle
 
-
-
-import pytest
-from filetool import locked_file_handle
 from locked_file_handle_orig import locked_file_handle_orig
 
-@pytest.mark.parametrize("which_fn,should_raise", [
-    (locked_file_handle_orig, True),
-    (locked_file_handle, False),
-])
-def test_locked_file_unlock_fails_param(which_fn, tmp_path, capsys, should_raise):
+
+@pytest.mark.parametrize(
+    "which_fn,should_raise",
+    [
+        (locked_file_handle_orig, True),
+        (locked_file_handle, False),
+    ],
+)
+def test_locked_file_unlock_fails_param(
+    which_fn,
+    tmp_path,
+    capsys,
+    should_raise,
+):
     path = tmp_path / "unlockfail.txt"
     path.write_bytes(b"unlock test\n")
 
@@ -42,16 +47,25 @@ def test_locked_file_unlock_fails_param(which_fn, tmp_path, capsys, should_raise
 
         if should_raise:
             with pytest.raises(OSError, match="Simulated unlock failure"):
-                with which_fn(path=path, mode="rb+", blocking=True, create=False) as fh:
+                with which_fn(
+                    path=path,
+                    mode="rb+",
+                    blocking=True,
+                    create=False,
+                ) as fh:
                     fh.write(b"closing soon\n")
         else:
-            with which_fn(path=path, mode="rb+", blocking=True, create=False) as fh:
+            with which_fn(
+                path=path,
+                mode="rb+",
+                blocking=True,
+                create=False,
+            ) as fh:
                 fh.write(b"closing soon\n")
 
             captured = capsys.readouterr()
             assert "Warning: failed to unlock file" in captured.err
             assert "Simulated unlock failure" in captured.err
-
 
 
 # exposed bug in new locked_file_handle implementaton
@@ -64,7 +78,12 @@ def test_locked_file_raises_oserror_enolck(tmp_path):
         flock_mock.side_effect = OSError(errno.ENOLCK, "No locks available")
 
         with pytest.raises(OSError) as exc_info:
-            with locked_file_handle(path=path, mode="rb+", blocking=True, create=False):
+            with locked_file_handle(
+                path=path,
+                mode="rb+",
+                blocking=True,
+                create=False,
+            ):
                 pass  # will not reach here
 
         assert "ENOLCK" in str(exc_info.value)
@@ -75,7 +94,12 @@ def test_locked_file_allows_exclusive_access(tmp_path):
     path = tmp_path / "locktest1"
     path.write_bytes(b"original\n")
 
-    with locked_file_handle(path=path, mode="rb+", blocking=True, create=False) as fh:
+    with locked_file_handle(
+        path=path,
+        mode="rb+",
+        blocking=True,
+        create=False,
+    ) as fh:
         data = fh.read()
         assert b"original" in data
         fh.seek(0, os.SEEK_END)
@@ -88,7 +112,10 @@ def test_locked_file_allows_exclusive_access(tmp_path):
 def try_lock_nonblocking(path: str, q):
     try:
         with locked_file_handle(
-            path=Path(path), mode="rb+", blocking=False, create=False
+            path=Path(path),
+            mode="rb+",
+            blocking=False,
+            create=False,
         ):
             q.put("acquired")
     except BlockingIOError:
@@ -99,7 +126,12 @@ def test_locked_file_blocks_other_access(tmp_path):
     path = tmp_path / "locktest2"
     path.write_bytes(b"first\n")
 
-    with locked_file_handle(path=path, mode="rb+", blocking=True, create=False):
+    with locked_file_handle(
+        path=path,
+        mode="rb+",
+        blocking=True,
+        create=False,
+    ):
         q = multiprocessing.Queue()
         p = multiprocessing.Process(target=try_lock_nonblocking, args=(str(path), q))
         p.start()
@@ -111,7 +143,12 @@ def test_locked_file_allows_access_after_release(tmp_path):
     path = tmp_path / "locktest3"
     path.write_bytes(b"init\n")
 
-    with locked_file_handle(path=path, mode="rb+", blocking=True, create=False):
+    with locked_file_handle(
+        path=path,
+        mode="rb+",
+        blocking=True,
+        create=False,
+    ):
         pass  # acquire and release immediately
 
     q = multiprocessing.Queue()
@@ -125,7 +162,12 @@ def test_locked_file_creates_when_create_true(tmp_path):
     path = tmp_path / "autocreate.bin"
     assert not path.exists()
 
-    with locked_file_handle(path=path, mode="rb+", blocking=True, create=True) as fh:
+    with locked_file_handle(
+        path=path,
+        mode="rb+",
+        blocking=True,
+        create=True,
+    ) as fh:
         fh.write(b"created\n")
 
     assert path.exists()
@@ -136,10 +178,18 @@ def test_locked_file_raises_blockingioerror(tmp_path):
     path = tmp_path / "locktest4"
     path.write_bytes(b"x\n")
 
-    with locked_file_handle(path=path, mode="rb+", blocking=True, create=False):
+    with locked_file_handle(
+        path=path,
+        mode="rb+",
+        blocking=True,
+        create=False,
+    ):
         with pytest.raises(BlockingIOError):
             with locked_file_handle(
-                path=path, mode="rb+", blocking=False, create=False
+                path=path,
+                mode="rb+",
+                blocking=False,
+                create=False,
             ):
                 pass  # won't reach
 
@@ -214,7 +264,10 @@ def test_lock_nonblocking_failure(temp_file):
 
     with pytest.raises(BlockingIOError):
         with locked_file_handle(
-            path=temp_file, mode="rb+", blocking=False, create=False
+            path=temp_file,
+            mode="rb+",
+            blocking=False,
+            create=False,
         ):
             pass
 

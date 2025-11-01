@@ -1,6 +1,8 @@
-import pytest
 from pathlib import Path
+
+import pytest
 from filetool import ensure_bytes_present
+
 
 def test_ensure_bytes_present_make_parents_requires_create_if_missing(tmp_path: Path):
     """
@@ -9,7 +11,9 @@ def test_ensure_bytes_present_make_parents_requires_create_if_missing(tmp_path: 
     """
     path = tmp_path / "missing_dir" / "file.txt"
 
-    with pytest.raises(ValueError, match="make_parents=True requires create_if_missing=True"):
+    with pytest.raises(
+        ValueError, match="make_parents=True requires create_if_missing=True"
+    ):
         ensure_bytes_present(
             path=path,
             bytes_payload=b"hello\n",

@@ -1,6 +1,8 @@
-import pytest
 from pathlib import Path
+
+import pytest
 from filetool import append_bytes_to_file
+
 
 def test_append_bytes_to_file_comment_marker_type_none_with_unique_bytes():
     append_bytes_to_file(

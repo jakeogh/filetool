@@ -1,6 +1,8 @@
-import pytest
 from pathlib import Path
+
+import pytest
 from filetool import append_bytes_to_file
+
 
 def test_append_bytes_to_file_line_ending_without_unique_bytes():
     with pytest.raises(ValueError, match="line_ending requires unique_bytes=True"):
@@ -9,7 +11,7 @@ def test_append_bytes_to_file_line_ending_without_unique_bytes():
             path=Path("/tmp/dummy"),
             unlink_first=False,
             unique_bytes=False,
-            line_ending=b'\n',
+            line_ending=b"\n",
             create_if_missing=True,
             make_parents=False,
         )

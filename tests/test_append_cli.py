@@ -43,7 +43,9 @@ def test_basic_append_line(tmpfile):
 def test_multiple_lines(tmpfile):
     """Test appending multiple lines."""
     runner = CliRunner()
-    result = runner.invoke(cli, ["append-line", "line1", "line2", "--path", str(tmpfile)])
+    result = runner.invoke(
+        cli, ["append-line", "line1", "line2", "--path", str(tmpfile)]
+    )
     assert result.exit_code == 0, result.output
     assert read_file(tmpfile) == b"line1\nline2\n"
 
@@ -113,7 +115,12 @@ def test_unique_append_add_new(tmpfile):
     ],
 )
 def test_unique_ignore_whitespace(
-    tmpfile, file_content, search_line, ignore_leading, ignore_trailing, should_match
+    tmpfile,
+    file_content,
+    search_line,
+    ignore_leading,
+    ignore_trailing,
+    should_match,
 ):
     """Test unique with whitespace ignoring options."""
     tmpfile.write_text(file_content)
@@ -233,7 +240,12 @@ def test_unlink_first(tmpfile):
         (False, False, False),  # No parent, no make-parents: should fail
     ],
 )
-def test_make_parents(tmp_path, make_parents, file_exists_initially, should_succeed):
+def test_make_parents(
+    tmp_path,
+    make_parents,
+    file_exists_initially,
+    should_succeed,
+):
     """Test parent directory creation."""
     file_path = tmp_path / "nested" / "deep" / "file.txt"
 
@@ -324,7 +336,11 @@ def test_append_bytes_hex_input(tmpfile):
     "hex_value,expected",
     [("00", b"\x00"), ("ff", b"\xff"), ("0a", b"\n"), ("0d0a", b"\r\n")],
 )
-def test_append_bytes_hex_various(tmpfile, hex_value, expected):
+def test_append_bytes_hex_various(
+    tmpfile,
+    hex_value,
+    expected,
+):
     """Test various hex values."""
     runner = CliRunner()
     result = runner.invoke(
@@ -447,7 +463,10 @@ def test_error_make_parents_without_create(tmpfile):
         ],
     )
     assert result.exit_code != 0
-    assert "--make-parents requires file creation (do not use --do-not-create)" in result.output
+    assert (
+        "--make-parents requires file creation (do not use --do-not-create)"
+        in result.output
+    )
 
 
 def test_error_unlink_first_without_unique(tmpfile):

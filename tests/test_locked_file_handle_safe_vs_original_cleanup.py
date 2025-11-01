@@ -14,6 +14,7 @@ from unittest import mock
 import pytest
 from filetool import locked_file_handle
 from filetool import open_eintr_safe
+
 from locked_file_handle_orig import locked_file_handle_orig
 
 
@@ -38,7 +39,10 @@ def temp_file():
     ],
 )
 def test_locked_file_handle_cleanup_strategy(
-    temp_file, which_fn, should_suppress_close_exception, capsys
+    temp_file,
+    which_fn,
+    should_suppress_close_exception,
+    capsys,
 ):
     """
     Simulate failure in both unlock and close. The hardened version should suppress,
@@ -58,12 +62,19 @@ def test_locked_file_handle_cleanup_strategy(
         fh.close = close_mock
         return fh
 
-    with mock.patch("builtins.open", patched_open), mock.patch(
-        "fcntl.flock", side_effect=[None, unlock_mock.side_effect]
-    ), mock.patch("os.close") as os_close_mock:
+    with (
+        mock.patch("builtins.open", patched_open),
+        mock.patch("fcntl.flock", side_effect=[None, unlock_mock.side_effect]),
+        mock.patch("os.close") as os_close_mock,
+    ):
 
         if should_suppress_close_exception:
-            with which_fn(path=temp_file, mode="rb+", blocking=True, create=True) as fh:
+            with which_fn(
+                path=temp_file,
+                mode="rb+",
+                blocking=True,
+                create=True,
+            ) as fh:
                 fh.write(b"safe")
 
             out = capsys.readouterr()
@@ -73,7 +84,10 @@ def test_locked_file_handle_cleanup_strategy(
         else:
             with pytest.raises(OSError, match="close failed"):
                 with which_fn(
-                    path=temp_file, mode="rb+", blocking=True, create=True
+                    path=temp_file,
+                    mode="rb+",
+                    blocking=True,
+                    create=True,
                 ) as fh:
                     fh.write(b"unsafe")
 
@@ -83,7 +97,11 @@ def test_locked_file_handle_cleanup_strategy(
     import gc
 
     if "handle" in recorded_fh:
-        real_close = getattr(real_open(temp_file, "rb"), "close", None)
+        real_close = getattr(
+            real_open(temp_file, "rb"),
+            "close",
+            None,
+        )
         if real_close:
             recorded_fh["handle"].close = real_close
     del close_mock

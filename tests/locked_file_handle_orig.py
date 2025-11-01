@@ -124,4 +124,3 @@ def locked_file_handle_orig(
 
 
 # pylint: enable=missing-raises-doc
-
