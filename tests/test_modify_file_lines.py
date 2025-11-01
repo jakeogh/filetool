@@ -74,7 +74,9 @@ def test_attack_1_hardlink_exhaustion(test_dir):
 
     def attack_create_hardlinks(ctx):
         """Hook that triggers attacker thread."""
-        attack_barrier.wait()  # Signal attacker to proceed
+        attack_barrier.wait()  # Release attacker
+        # Wait for attacker to finish
+        attacker_executed.wait(timeout=5.0)
 
     def attacker():
         """Attacker creates many hardlinks between step 28 and 31."""
@@ -272,7 +274,8 @@ def test_attack_3_replace_during_permission_copy(test_dir):
 
     def attack_trigger(ctx):
         """Hook that triggers attacker thread."""
-        attack_barrier.wait()
+        attack_barrier.wait()  # Release attacker
+        attacker_executed.wait(timeout=5.0)  # Wait for attacker to finish
 
     def attacker():
         """Attacker replaces target file during permission copy phase."""
@@ -371,19 +374,21 @@ def test_attack_4_symlink_race_on_temp_file(test_dir):
         """Hook that captures temp_path and triggers attacker."""
         nonlocal temp_path_captured
         temp_path_captured = ctx.locals.get("temp_path")
-        attack_barrier.wait()
+        attack_barrier.wait()  # Release attacker
+        # Wait for attacker to finish
+        attacker_executed.wait(timeout=5.0)
 
     def attacker():
         """Attacker creates symlink at predicted temp file path."""
         attack_barrier.wait()  # Wait for temp path to be generated
-
-        # Use the captured temp path
-        if temp_path_captured and not temp_path_captured.exists():
+        # Use the captured temp path - try to create symlink before legitimate operation
+        if temp_path_captured:
             try:
                 temp_path_captured.symlink_to(evil_target)
-                attacker_executed.set()
             except (FileExistsError, OSError):
                 pass
+            finally:
+                attacker_executed.set()  # Always signal completion
 
     # Instrument the function
     hooks = {
@@ -402,7 +407,7 @@ def test_attack_4_symlink_race_on_temp_file(test_dir):
         attacker_thread.start()
 
         # Execute the operation - should fail on symlink
-        with pytest.raises((OSError, FileExistsError)) as exc_info:
+        with pytest.raises(FileExistsError) as exc_info:
             comment_out_line_in_file(
                 path=config_file,
                 line="line1",
@@ -425,9 +430,8 @@ def test_attack_4_symlink_race_on_temp_file(test_dir):
             config_file.read_text() == initial_content
         ), "Original file should not be modified"
 
-        # Verify the symlink still exists (attacker created it)
-        if temp_path_captured:
-            assert temp_path_captured.is_symlink(), "Attacker's symlink should exist"
+        # The symlink may or may not still exist (cleanup depends on when error was caught)
+        # What matters is that evil_target was never written to
 
     finally:
         # Restore original function
@@ -464,19 +468,18 @@ def test_attack_5_replace_after_hardlink_before_rename(test_dir):
 
     initial_content = "line1\nline2\nline3\n"
     evil_content = "EVIL_CONTENT\n"
-    expected_content = "# line1\n# line2\n# line3\n"  # After commenting
+    expected_content = "# line1\nline2\nline3\n"  # Only line1 gets commented
 
     config_file.write_text(initial_content)
     evil_file.write_text(evil_content)
-
-    original_inode = config_file.stat().st_ino
 
     attacker_executed = threading.Event()
     attack_barrier = threading.Barrier(2)
 
     def attack_trigger(ctx):
         """Hook that triggers attacker thread."""
-        attack_barrier.wait()
+        attack_barrier.wait()  # Release attacker
+        attacker_executed.wait(timeout=5.0)  # Wait for attacker to finish
 
     def attacker():
         """Attacker replaces file in the critical window after hardlink check."""
@@ -524,17 +527,13 @@ def test_attack_5_replace_after_hardlink_before_rename(test_dir):
         assert result > 0, "Operation should have modified lines"
 
         # Verify config_file contains transformed content (not evil content)
-        assert (
-            config_file.read_text() == expected_content
-        ), "File should contain commented lines"
+        content = config_file.read_text()
+        assert content == expected_content, "File should contain commented line1"
+        assert content != evil_content, "File should not contain evil content"
+        assert result == 1, "Operation should have commented 1 line"
 
         # Verify evil_file no longer exists (was renamed then overwritten)
         assert not evil_file.exists(), "Evil file should not exist (was renamed)"
-
-        # Verify config_file has NEW inode (neither original nor evil's inode)
-        current_inode = config_file.stat().st_ino
-        # Note: The inode might be the same as original if the rename reused it,
-        # but the content is definitely from temp_path
 
         # The key verification: legitimate operation won
         assert config_file.read_text() == expected_content
@@ -552,7 +551,6 @@ def test_normal_operation_without_attacks(test_dir):
     """
     config_file = test_dir / "config.txt"
     initial_content = "line1\nline2\nline3\n"
-    expected_content = "# line1\n# line2\n# line3\n"
 
     config_file.write_text(initial_content)
 

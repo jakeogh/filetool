@@ -1014,13 +1014,13 @@ def _modify_file_lines(
             if modified_count == 0:
                 return 0
 
-            # HOOK:step_18_generate_temp_path
             # Generate temporary file path in same directory
             # Using same directory ensures atomic rename (same filesystem)
             temp_path = (
                 path.parent
                 / f".filetool.tmp.{os.getpid()}.{random.randint(100000, 999999)}"
             )
+            # HOOK:step_18_generate_temp_path
 
             try:
                 # HOOK:step_19_open_temp_file
@@ -1107,6 +1107,10 @@ def _modify_file_lines(
                     # Verify hardlink creation by checking link count
                     # We must stat 'path', not 'link_path', to detect replacement
                     stat_after_link = path.stat()
+                    print(
+                        f"[LEGIT] After attacker, stat_after_link.st_nlink = {stat_after_link.st_nlink}"
+                    )
+                    print(f"[LEGIT] expected_link_count = {expected_link_count}")
 
                     # HOOK:step_31_verify_hardlink
                     if (
