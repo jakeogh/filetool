@@ -78,7 +78,10 @@ def test_attack_1_hardlink_exhaustion(test_dir):
 
     def attacker():
         """Attacker creates many hardlinks between step 28 and 31."""
-        attack_barrier.wait()  # Wait for step 28 to complete
+        attack_barrier.wait()  # Wait for step 29
+
+        print(f"[ATTACKER] Starting attack, config_file={config_file}")
+        print(f"[ATTACKER] Initial link count: {config_file.stat().st_nlink}")
 
         # Create multiple hardlinks
         for i in range(10):
@@ -86,9 +89,14 @@ def test_attack_1_hardlink_exhaustion(test_dir):
             try:
                 os.link(config_file, link)
                 attack_links.append(link)
-            except (FileExistsError, OSError):
-                pass
+                print(
+                    f"[ATTACKER] Created hardlink {i}, nlink now: {config_file.stat().st_nlink}"
+                )
+            except (FileExistsError, OSError) as e:
+                print(f"[ATTACKER] Failed to create link {i}: {e}")
 
+        print(f"[ATTACKER] Created {len(attack_links)} hardlinks")
+        print(f"[ATTACKER] Final link count: {config_file.stat().st_nlink}")
         attacker_executed.set()
 
     # Instrument the function
@@ -96,7 +104,11 @@ def test_attack_1_hardlink_exhaustion(test_dir):
         "step_29_calculate_expected_link_count": attack_create_hardlinks,
     }
 
-    instrumented = instrument_function(_modify_file_lines, hooks, verbose=True)
+    instrumented = instrument_function(
+        _modify_file_lines,
+        hooks,
+        verbose=True,
+    )
 
     # Replace the function temporarily
     original_func = filetool.filetool._modify_file_lines

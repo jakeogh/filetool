@@ -1070,7 +1070,6 @@ def _modify_file_lines(
                         f"(inode changed from {inode_before} to {stat_before_rename.st_ino})"
                     )
 
-
                 # HOOK:step_27_generate_link_path
                 # Hardlink trick: Create hardlink to detect replacement in rename window
                 #
@@ -1093,7 +1092,14 @@ def _modify_file_lines(
                 try:
                     # HOOK:step_28_create_hardlink
                     # Attempt to create hardlink
+                    print(
+                        f"[LEGIT] About to create hardlink, current nlink: {path.stat().st_nlink}"
+                    )
                     os.link(path, link_path)
+                    print(
+                        f"[LEGIT] Created hardlink, new nlink: {path.stat().st_nlink}"
+                    )
+
                     # HOOK:step_29_calculate_expected_link_count
                     expected_link_count = stat_before_rename.st_nlink + 1
 
