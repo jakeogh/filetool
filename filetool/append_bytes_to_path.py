@@ -24,7 +24,7 @@ def append_bytes_to_path(
     dry_run: bool = False,
 ) -> int:
     """
-    Append raw bytes to a file without modification.
+    Append raw bytes to a file.
 
     Args:
         data: The bytes to append
