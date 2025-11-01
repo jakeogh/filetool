@@ -17,13 +17,14 @@ Run with: pytest test_attack_scenarios_real.py -v -s
 
 import os
 # Import the actual implementation
-# In real usage, this would be: from filetool import _modify_file_lines
-# For testing, we'll need to import from the actual module
+# _modify_file_lines is internal (not in __all__) so we need explicit import
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
+
 # Import the instrumenter
 from filetool.test_instrumenter import instrument_function
 
@@ -34,6 +35,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 try:
     import filetool
     from filetool import comment_out_line_in_file
+    # Import the internal function explicitly
+    from filetool.filetool import _modify_file_lines
 except ImportError:
     pytest.skip("filetool module not available", allow_module_level=True)
 
@@ -90,14 +93,14 @@ def test_attack_1_hardlink_exhaustion(test_dir):
 
     # Instrument the function
     hooks = {
-        "step_28_create_hardlink": attack_create_hardlinks,
+        "step_29_calculate_expected_link_count": attack_create_hardlinks,
     }
 
-    instrumented = instrument_function(filetool._modify_file_lines, hooks)
+    instrumented = instrument_function(_modify_file_lines, hooks, verbose=True)
 
     # Replace the function temporarily
-    original_func = filetool._modify_file_lines
-    filetool._modify_file_lines = instrumented
+    original_func = filetool.filetool._modify_file_lines
+    filetool.filetool._modify_file_lines = instrumented
 
     try:
         # Start attacker thread
@@ -135,7 +138,7 @@ def test_attack_1_hardlink_exhaustion(test_dir):
 
     finally:
         # Restore original function
-        filetool._modify_file_lines = original_func
+        filetool.filetool._modify_file_lines = original_func
 
 
 def test_attack_2_delete_during_read(test_dir):
@@ -181,11 +184,11 @@ def test_attack_2_delete_during_read(test_dir):
         "step_12_read_lines": attack_trigger,
     }
 
-    instrumented = instrument_function(filetool._modify_file_lines, hooks)
+    instrumented = instrument_function(_modify_file_lines, hooks)
 
     # Replace the function temporarily
-    original_func = filetool._modify_file_lines
-    filetool._modify_file_lines = instrumented
+    original_func = filetool.filetool._modify_file_lines
+    filetool.filetool._modify_file_lines = instrumented
 
     try:
         # Start attacker thread
@@ -220,7 +223,7 @@ def test_attack_2_delete_during_read(test_dir):
 
     finally:
         # Restore original function
-        filetool._modify_file_lines = original_func
+        filetool.filetool._modify_file_lines = original_func
 
 
 def test_attack_3_replace_during_permission_copy(test_dir):
@@ -272,11 +275,11 @@ def test_attack_3_replace_during_permission_copy(test_dir):
         "step_24_chown_temp": attack_trigger,
     }
 
-    instrumented = instrument_function(filetool._modify_file_lines, hooks)
+    instrumented = instrument_function(_modify_file_lines, hooks)
 
     # Replace the function temporarily
-    original_func = filetool._modify_file_lines
-    filetool._modify_file_lines = instrumented
+    original_func = filetool.filetool._modify_file_lines
+    filetool.filetool._modify_file_lines = instrumented
 
     try:
         # Start attacker thread
@@ -318,7 +321,7 @@ def test_attack_3_replace_during_permission_copy(test_dir):
 
     finally:
         # Restore original function
-        filetool._modify_file_lines = original_func
+        filetool.filetool._modify_file_lines = original_func
 
 
 def test_attack_4_symlink_race_on_temp_file(test_dir):
@@ -375,11 +378,11 @@ def test_attack_4_symlink_race_on_temp_file(test_dir):
         "step_18_generate_temp_path": capture_temp_path,
     }
 
-    instrumented = instrument_function(filetool._modify_file_lines, hooks)
+    instrumented = instrument_function(_modify_file_lines, hooks)
 
     # Replace the function temporarily
-    original_func = filetool._modify_file_lines
-    filetool._modify_file_lines = instrumented
+    original_func = filetool.filetool._modify_file_lines
+    filetool.filetool._modify_file_lines = instrumented
 
     try:
         # Start attacker thread
@@ -416,7 +419,7 @@ def test_attack_4_symlink_race_on_temp_file(test_dir):
 
     finally:
         # Restore original function
-        filetool._modify_file_lines = original_func
+        filetool.filetool._modify_file_lines = original_func
 
 
 def test_attack_5_replace_after_hardlink_before_rename(test_dir):
@@ -481,11 +484,11 @@ def test_attack_5_replace_after_hardlink_before_rename(test_dir):
         "step_32_hardlink_successful": attack_trigger,
     }
 
-    instrumented = instrument_function(filetool._modify_file_lines, hooks)
+    instrumented = instrument_function(_modify_file_lines, hooks)
 
     # Replace the function temporarily
-    original_func = filetool._modify_file_lines
-    filetool._modify_file_lines = instrumented
+    original_func = filetool.filetool._modify_file_lines
+    filetool.filetool._modify_file_lines = instrumented
 
     try:
         # Start attacker thread
@@ -526,7 +529,7 @@ def test_attack_5_replace_after_hardlink_before_rename(test_dir):
 
     finally:
         # Restore original function
-        filetool._modify_file_lines = original_func
+        filetool.filetool._modify_file_lines = original_func
 
 
 def test_normal_operation_without_attacks(test_dir):
