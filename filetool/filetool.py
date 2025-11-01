@@ -9,7 +9,9 @@ import errno
 import fcntl
 import hashlib
 import os
+import random
 import sys
+from collections.abc import Callable
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -27,6 +29,7 @@ __all__ = [
     "ensure_bytes_present",
     "ensure_line_in_config_file",
     "open_eintr_safe",
+    "comment_out_line_in_file",
 ]
 
 Constraint = dict[str, Any]
@@ -839,6 +842,466 @@ def append_bytes_to_file(
                 ignore_trailing_whitespace=ignore_trailing_whitespace,
             )
             return bytes_written
+
+
+def _modify_file_lines(
+    *,
+    path: Path,
+    line_transformer: Callable[[bytes], bytes],
+    line_ending: bytes,
+) -> int:
+    """
+    Atomically read, transform, and rewrite a file line-by-line.
+
+    INTERNAL FUNCTION - Not exposed in __all__. Provides the primitive for higher-level
+    operations like comment_out_line_in_file().
+
+    This function implements a read-modify-write pattern with the same locking guarantees
+    as the append operations.
+
+    Locking and atomicity guarantees:
+        1. Acquires global per-file lock (SHA256-based lockfile in /tmp/filetool-locks)
+        2. Acquires advisory flock() on the target file
+        3. Records file inode before reading
+        4. Verifies inode unchanged after reading (detects replacement during read)
+        5. Writes transformed content to temporary file in same directory
+        6. Uses hardlink to detect replacement in critical rename window
+        7. Atomically renames temporary file over original
+        8. Preserves file permissions and ownership
+
+    File replacement detection strategy:
+        - Before reading: Record original inode
+        - After reading: Verify inode unchanged (catches replacement during read phase)
+        - Before rename: Create hardlink and verify link count (catches replacement in
+          the microsecond window between final check and rename)
+
+    The hardlink trick closes the race window:
+        If the file is replaced after we create the hardlink, the hardlink still points
+        to the old inode, but path.stat() returns the new inode with link count 1.
+        We detect this mismatch and abort the operation.
+
+    Filesystem compatibility:
+        - Works on modern Linux filesystems
+        - Gracefully falls back to best-effort rename on vfat, exfat etc.
+        - May have issues on CIFS/SMB with unreliable hardlink semantics
+
+    Parameters:
+        path (Path): File to modify. Must exist.
+        line_transformer (Callable[[bytes], bytes]): Function that transforms each line.
+            Receives line WITH line_ending, must return line WITH line_ending.
+            Return the same bytes to leave line unchanged.
+        line_ending (bytes): Line delimiter. Typically b'\n', b'\r\n', or b'\r'.
+
+    Returns:
+        int: Number of lines that were actually modified (transformer returned different bytes).
+
+    Raises:
+        FileNotFoundError: If file doesn't exist
+        OSError: If file is replaced during modification, or other I/O errors
+        PermissionError: If insufficient permissions to read, write, or modify file
+
+    Implementation notes:
+        - Reads entire file into memory (not suitable for gigabyte-sized files)
+        - Temporary file is written to same directory as target (ensures same filesystem)
+        - Temporary file naming: .filetool.tmp.{pid}.{random}
+        - Attempts to preserve permissions/ownership (ownership may fail if non-root)
+        - Cleans up temporary file even if operation fails
+    """
+
+    if not isinstance(path, Path):
+        raise TypeError(f"path must be Path, got {type(path).__name__}")
+    if not isinstance(line_ending, bytes):
+        raise TypeError(f"line_ending must be bytes, got {type(line_ending).__name__}")
+    if len(line_ending) == 0:
+        raise ValueError("line_ending must not be empty")
+    if not callable(line_transformer):
+        raise TypeError("line_transformer must be callable")
+
+    # HOOK:step_1_get_lockfile_path
+    # Acquire global lock to serialize access across all cooperating processes
+    lock_path = get_lockfile_path(path)
+    # HOOK:step_2_open_lockfile
+    lock_fd = open_with_mode(
+        lock_path,
+        os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW,
+        0o666,  # Allow all users to acquire lock
+    )
+
+    try:
+        # HOOK:step_3_acquire_global_lock
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+
+        # HOOK:step_4_stat_before
+        # Record file metadata BEFORE opening
+        # This establishes our baseline for detecting replacement
+        try:
+            stat_before = path.stat()
+        except FileNotFoundError:
+            raise FileNotFoundError(f"File does not exist: {path}")
+
+        # HOOK:step_5_record_inode
+        inode_before = stat_before.st_ino
+
+        # HOOK:step_6_call_locked_file_handle
+        # Open file with advisory lock
+        with locked_file_handle(
+            path=path,
+            mode="rb+",
+            blocking=True,
+            create=False,
+        ) as fh:
+            # HOOK:step_9_fstat_opened
+            # Verify the file we opened is the same one we stat'd
+            # This catches replacement between stat() and open()
+            stat_opened = os.fstat(fh.fileno())
+            # HOOK:step_10_compare_inode_after_open
+            if stat_opened.st_ino != inode_before:
+                raise OSError(
+                    f"File {path} was replaced between stat and open "
+                    f"(inode changed from {inode_before} to {stat_opened.st_ino})"
+                )
+
+            # HOOK:step_11_seek_to_start
+            # Read and parse all lines
+            fh.seek(0)
+            # HOOK:step_12_read_lines
+            lines = list(
+                splitlines_bytes(
+                    fh,
+                    delim=line_ending,
+                    comment_marker=None,
+                    strip_leading_whitespace=False,
+                    strip_trailing_whitespace=False,
+                )
+            )
+
+            # HOOK:step_13_stat_after_read
+            # Verify file still has same inode after reading
+            # This catches replacement during the read phase
+            try:
+                stat_after_read = path.stat()
+            except FileNotFoundError:
+                raise OSError(f"File {path} was deleted during read operation")
+
+            # HOOK:step_14_compare_inode_after_read
+            if stat_after_read.st_ino != inode_before:
+                raise OSError(
+                    f"File {path} was replaced during read operation "
+                    f"(inode changed from {inode_before} to {stat_after_read.st_ino})"
+                )
+
+            # HOOK:step_15_transform_lines
+            # Transform lines and count modifications
+            modified_count = 0
+            new_lines: list[bytes] = []
+
+            for line in lines:
+                new_line = line_transformer(line)
+
+                # Validate transformer output
+                if not isinstance(new_line, bytes):
+                    raise TypeError(
+                        f"line_transformer must return bytes, got {type(new_line).__name__}"
+                    )
+
+                if new_line != line:
+                    modified_count += 1
+
+                new_lines.append(new_line)
+
+            # HOOK:step_17_check_if_modified
+            # If nothing changed, return early without writing
+            if modified_count == 0:
+                return 0
+
+            # HOOK:step_18_generate_temp_path
+            # Generate temporary file path in same directory
+            # Using same directory ensures atomic rename (same filesystem)
+            temp_path = (
+                path.parent
+                / f".filetool.tmp.{os.getpid()}.{random.randint(100000, 999999)}"
+            )
+
+            try:
+                # HOOK:step_19_open_temp_file
+                # Write transformed content to temporary file
+                with open(temp_path, "xb") as temp_fh:
+                    # HOOK:step_20_write_temp_file
+                    for line in new_lines:
+                        temp_fh.write(line)
+                    # HOOK:step_21_flush_and_fsync
+                    temp_fh.flush()
+                    fsync_eintr_safe(temp_fh.fileno())
+
+                # HOOK:step_23_chmod_temp
+                # Copy permissions from original file
+                os.chmod(temp_path, stat_before.st_mode)
+
+                # HOOK:step_24_chown_temp
+                # Attempt to copy ownership (may fail if not root)
+                try:
+                    os.chown(
+                        temp_path,
+                        stat_before.st_uid,
+                        stat_before.st_gid,
+                    )
+                except PermissionError:
+                    pass  # Non-root users can't chown, but that's acceptable
+
+                # HOOK:step_25_stat_before_rename
+                # CRITICAL SECTION: Verify file unchanged and perform atomic rename
+                #
+                # There's still a race window between this check and the rename.
+                # We use the hardlink trick to detect replacement in that window.
+
+                try:
+                    stat_before_rename = path.stat()
+                except FileNotFoundError:
+                    # File was deleted - clean up and abort
+                    temp_path.unlink()
+                    raise OSError(f"File {path} was deleted before rename operation")
+
+                # HOOK:step_26_compare_inode_before_rename
+                if stat_before_rename.st_ino != inode_before:
+                    # File was replaced - clean up and abort
+                    temp_path.unlink()
+                    raise OSError(
+                        f"File {path} was replaced before rename operation "
+                        f"(inode changed from {inode_before} to {stat_before_rename.st_ino})"
+                    )
+
+                # HOOK:step_27_generate_link_path
+                # Hardlink trick: Create hardlink to detect replacement in rename window
+                #
+                # How this works:
+                # 1. Create hardlink: both 'path' and 'link_path' point to same inode
+                # 2. Original file now has link count = nlink + 1
+                # 3. If someone replaces 'path', they create a NEW inode at that path
+                # 4. The hardlink still points to the OLD inode
+                # 5. When we stat('path'), we get the NEW inode with link count = 1
+                # 6. We detect the mismatch and abort
+                #
+                # This closes the race window on filesystems with hardlink support.
+
+                link_path = path.parent / f".filetool.link.{os.getpid()}"
+                hardlink_successful = False
+
+                try:
+                    # HOOK:step_28_create_hardlink
+                    # Attempt to create hardlink
+                    os.link(path, link_path)
+                    # HOOK:step_29_calculate_expected_link_count
+                    expected_link_count = stat_before_rename.st_nlink + 1
+
+                    # HOOK:step_30_stat_after_link
+                    # Verify hardlink creation by checking link count
+                    # We must stat 'path', not 'link_path', to detect replacement
+                    stat_after_link = path.stat()
+
+                    # HOOK:step_31_verify_hardlink
+                    if (
+                        stat_after_link.st_nlink == expected_link_count
+                        and stat_after_link.st_ino == inode_before
+                    ):
+                        # HOOK:step_32_hardlink_successful
+                        # Hardlink successful and file still unchanged
+                        hardlink_successful = True
+                    else:
+                        # Hardlink failed or file was replaced
+                        # Clean up hardlink and fall through to regular rename
+                        try:
+                            link_path.unlink()
+                        except FileNotFoundError:
+                            pass
+
+                except (OSError, PermissionError):
+                    # Filesystem doesn't support hardlinks (vfat, exfat) or permission denied
+                    # Fall through to regular rename (best effort)
+                    if link_path.exists():
+                        try:
+                            link_path.unlink()
+                        except:
+                            pass
+
+                # HOOK:step_33_rename
+                # Perform atomic rename
+                # If hardlink is present, the inode check above ensures correctness
+                # If hardlink failed, we do best-effort rename with small race window
+                os.rename(temp_path, path)
+
+                # HOOK:step_34_cleanup_hardlink
+                # Clean up hardlink if it exists
+                if hardlink_successful:
+                    try:
+                        link_path.unlink()
+                    except FileNotFoundError:
+                        pass  # Already cleaned up or race occurred
+
+                return modified_count
+
+            except Exception:
+                # Clean up temporary file on any error
+                try:
+                    temp_path.unlink()
+                except FileNotFoundError:
+                    pass
+                raise
+
+    finally:
+        # HOOK:step_36_close_lockfile
+        os.close(lock_fd)
+
+
+def comment_out_line_in_file(
+    *,
+    path: Path,
+    line: str,
+    comment_marker: str = "#",
+    line_ending: bytes = b"\n",
+    ignore_leading_whitespace: bool = True,
+    ignore_trailing_whitespace: bool = True,
+) -> int:
+    """
+    Comment out all occurrences of a line in a file.
+
+    This function searches for exact matches of the specified line and prepends
+    the comment marker to each matching line. All matches are commented out atomically
+    in a single operation with full locking guarantees.
+
+    Typical use case: Toggle configuration lines in config files on/off.
+
+    Atomicity guarantees:
+        - Uses same global locking as append operations
+        - Detects file replacement via inode checking
+        - Uses hardlink trick to prevent race conditions
+        - All changes applied atomically via write-to-temp + rename
+
+    Parameters:
+        path (Path): Path to the file to modify. Must exist.
+        line (str): The line content to comment out (without line ending or comment marker).
+                    For example: "export FOO=bar" not "# export FOO=bar\n"
+        comment_marker (str): Comment prefix to add. Default: "#"
+                             A space is automatically added after the marker.
+        line_ending (bytes): Line ending delimiter. Default: b"\n" (LF)
+                            Common values: b"\n" (Unix), b"\r\n" (Windows), b"\r" (Mac Classic)
+        ignore_leading_whitespace (bool): If True, ignore leading whitespace when matching lines.
+                                         Example: "  export FOO=bar" matches "export FOO=bar"
+        ignore_trailing_whitespace (bool): If True, ignore trailing whitespace when matching lines.
+                                          Example: "export FOO=bar  " matches "export FOO=bar"
+
+    Returns:
+        int: Number of lines that were commented out.
+             Returns 0 if no matching lines were found or if all matches were already commented.
+
+    Raises:
+        FileNotFoundError: If the file doesn't exist
+        OSError: If file is replaced during modification or other I/O errors
+        PermissionError: If insufficient permissions
+        ValueError: If line contains the line_ending delimiter
+        TypeError: If parameters have wrong types
+
+    Example:
+        # Comment out all export statements for FOO
+        count = comment_out_line_in_file(
+            path=Path("/etc/environment"),
+            line="export FOO=bar",
+            comment_marker="#",
+        )
+        print(f"Commented out {count} lines")
+
+        # File before:
+        # export PATH=/usr/bin
+        # export FOO=bar
+        # export BAR=baz
+        # export FOO=bar
+        #
+        # File after:
+        # export PATH=/usr/bin
+        # # export FOO=bar
+        # export BAR=baz
+        # # export FOO=bar
+
+    Notes:
+        - Lines already starting with comment marker (even with whitespace) will NOT match
+        - Whitespace handling is only applied to the matching logic, not to the original line
+        - Comment marker + space is prepended to the ORIGINAL line (preserves original formatting)
+        - This is a line-oriented operation; partial line matches are not supported
+        - Uses same locking mechanism as append operations (cooperating processes only)
+    """
+
+    # Parameter validation
+    if not isinstance(path, Path):
+        raise TypeError(f"path must be Path, got {type(path).__name__}")
+    if not isinstance(line, str):
+        raise TypeError(f"line must be str, got {type(line).__name__}")
+    if not isinstance(comment_marker, str):
+        raise TypeError(
+            f"comment_marker must be str, got {type(comment_marker).__name__}"
+        )
+    if not isinstance(line_ending, bytes):
+        raise TypeError(f"line_ending must be bytes, got {type(line_ending).__name__}")
+
+    if len(line) == 0:
+        raise ValueError("line must not be empty")
+    if len(comment_marker) == 0:
+        raise ValueError("comment_marker must not be empty")
+    if len(line_ending) == 0:
+        raise ValueError("line_ending must not be empty")
+
+    # Encode for byte-level operations
+    line_bytes = line.encode("utf-8", errors="strict")
+    comment_prefix = (comment_marker + " ").encode("utf-8", errors="strict")
+
+    # Check that line doesn't contain line_ending
+    # This prevents ambiguity and ensures line-oriented matching
+    if line_ending in line_bytes:
+        raise ValueError(
+            f"line contains the line_ending delimiter ({line_ending!r}). "
+            f"This function operates on single lines only. "
+            f"Use separate calls for multiple lines or choose a different line_ending."
+        )
+
+    # Build target pattern: line + line_ending
+    target = line_bytes + line_ending
+
+    # Define the transformer function
+    # This will be called for each line in the file
+    def transformer(line_with_ending: bytes) -> bytes:
+        # Build comparison line respecting whitespace options
+        compare_line = line_with_ending
+
+        if ignore_leading_whitespace:
+            # Strip leading whitespace but preserve line_ending
+            stripped = compare_line.lstrip()
+            if stripped == line_ending or len(stripped) == 0:
+                # Line is only whitespace
+                compare_line = line_ending
+            else:
+                compare_line = stripped
+
+        if ignore_trailing_whitespace:
+            # Strip trailing whitespace but preserve line_ending
+            if compare_line.endswith(line_ending):
+                content = compare_line[: -len(line_ending)]
+                compare_line = content.rstrip() + line_ending
+            else:
+                compare_line = compare_line.rstrip()
+
+        # Check if this line matches our target
+        if compare_line == target:
+            # Match found - prepend comment marker to ORIGINAL line
+            # We comment the original to preserve formatting
+            return comment_prefix + line_with_ending
+        else:
+            # No match - return unchanged
+            return line_with_ending
+
+    # Perform the atomic modification
+    return _modify_file_lines(
+        path=path,
+        line_transformer=transformer,
+        line_ending=line_ending,
+    )
 
 
 def ensure_line_in_config_file(

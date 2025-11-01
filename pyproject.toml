@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "filetool"
-version = "1!0.0.1762033297"
+version = "1!0.0.1762042148"
 description = "Common file operations"
 authors = [
     { name = "Justin Keogh", email = "github.com@v6y.net" },
