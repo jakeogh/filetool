@@ -1070,6 +1070,7 @@ def _modify_file_lines(
                         f"(inode changed from {inode_before} to {stat_before_rename.st_ino})"
                     )
 
+
                 # HOOK:step_27_generate_link_path
                 # Hardlink trick: Create hardlink to detect replacement in rename window
                 #
@@ -1085,6 +1086,9 @@ def _modify_file_lines(
 
                 link_path = path.parent / f".filetool.link.{os.getpid()}"
                 hardlink_successful = False
+                hardlink_verification_failed = False
+                hardlink_failed_inode = None
+                hardlink_failed_nlink = None
 
                 try:
                     # HOOK:step_28_create_hardlink
@@ -1108,27 +1112,10 @@ def _modify_file_lines(
                         hardlink_successful = True
                     else:
                         # Hardlink verification failed - file was modified concurrently
-                        # Clean up and abort
-                        try:
-                            link_path.unlink()
-                        except FileNotFoundError:
-                            pass
-                        try:
-                            temp_path.unlink()
-                        except FileNotFoundError:
-                            pass
-
-                        # Determine why it failed for better error message
-                        if stat_after_link.st_ino != inode_before:
-                            raise OSError(
-                                f"File {path} was replaced during hardlink verification "
-                                f"(inode changed from {inode_before} to {stat_after_link.st_ino})"
-                            )
-                        else:
-                            raise OSError(
-                                f"File {path} was modified during operation "
-                                f"(link count mismatch: expected {expected_link_count}, got {stat_after_link.st_nlink})"
-                            )
+                        # Store details for error reporting outside this try block
+                        hardlink_verification_failed = True
+                        hardlink_failed_inode = stat_after_link.st_ino
+                        hardlink_failed_nlink = stat_after_link.st_nlink
 
                 except (OSError, PermissionError):
                     # Filesystem doesn't support hardlinks (vfat, exfat) or permission denied
@@ -1138,6 +1125,31 @@ def _modify_file_lines(
                             link_path.unlink()
                         except:
                             pass
+
+                # Check if hardlink verification failed - must be outside try-except
+                # so our OSError doesn't get caught by the filesystem support handler
+                if hardlink_verification_failed:
+                    # Clean up hardlink and temp file
+                    try:
+                        link_path.unlink()
+                    except FileNotFoundError:
+                        pass
+                    try:
+                        temp_path.unlink()
+                    except FileNotFoundError:
+                        pass
+
+                    # Determine why it failed and raise appropriate error
+                    if hardlink_failed_inode != inode_before:
+                        raise OSError(
+                            f"File {path} was replaced during hardlink verification "
+                            f"(inode changed from {inode_before} to {hardlink_failed_inode})"
+                        )
+                    else:
+                        raise OSError(
+                            f"File {path} was modified during operation "
+                            f"(link count mismatch: expected {expected_link_count}, got {hardlink_failed_nlink})"
+                        )
 
                 # HOOK:step_33_rename
                 # Perform atomic rename
