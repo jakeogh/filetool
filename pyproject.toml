@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "filetool"
-version = "1!0.0.1762042997"
+version = "1!0.0.1762043500"
 description = "Common file operations"
 authors = [
     { name = "Justin Keogh", email = "github.com@v6y.net" },
@@ -45,4 +45,6 @@ testpaths = ["tests"]
 markers = [
     "eintr_tests: Tests that verify EINTR signal handling (run with -m eintr_tests)",
 ]
+addopts = "-v -rs"
+
 

@@ -21,12 +21,11 @@ import os
 # For testing, we'll need to import from the actual module
 import sys
 import threading
-import time
 from pathlib import Path
 
 import pytest
 # Import the instrumenter
-from test_instrumenter import instrument_function
+from filetool.test_instrumenter import instrument_function
 
 sys.path.insert(0, str(Path(__file__).parent))
 
