@@ -1107,12 +1107,28 @@ def _modify_file_lines(
                         # Hardlink successful and file still unchanged
                         hardlink_successful = True
                     else:
-                        # Hardlink failed or file was replaced
-                        # Clean up hardlink and fall through to regular rename
+                        # Hardlink verification failed - file was modified concurrently
+                        # Clean up and abort
                         try:
                             link_path.unlink()
                         except FileNotFoundError:
                             pass
+                        try:
+                            temp_path.unlink()
+                        except FileNotFoundError:
+                            pass
+
+                        # Determine why it failed for better error message
+                        if stat_after_link.st_ino != inode_before:
+                            raise OSError(
+                                f"File {path} was replaced during hardlink verification "
+                                f"(inode changed from {inode_before} to {stat_after_link.st_ino})"
+                            )
+                        else:
+                            raise OSError(
+                                f"File {path} was modified during operation "
+                                f"(link count mismatch: expected {expected_link_count}, got {stat_after_link.st_nlink})"
+                            )
 
                 except (OSError, PermissionError):
                     # Filesystem doesn't support hardlinks (vfat, exfat) or permission denied
