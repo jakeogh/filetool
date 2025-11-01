@@ -488,11 +488,18 @@ def ensure_bytes_present(
             - Parses the file into logical lines using `splitlines_bytes()`.
             - Compares each line to `bytes_payload`, respecting comment markers and whitespace options.
             - Only appends `bytes_payload` if no matching line is found.
-        - If `line_ending` is None:
+        - If `line_ending` is None (binary mode):
             - Performs binary substring search using `find_bytes_offset_in_stream()`.
             - Only appends `bytes_payload` if the exact byte sequence is not found anywhere in the file.
             - Note: `comment_marker`, `ignore_leading_whitespace`, and `ignore_trailing_whitespace`
               have no effect when `line_ending=None` (binary mode).
+
+    Uniqueness semantics:
+        - With `line_ending`: Line-oriented comparison (is this line already present?)
+        - Without `line_ending`: Substring search (does this byte sequence appear anywhere?)
+
+        This distinction is intentional: line mode checks logical presence of lines,
+        while binary mode checks physical presence of byte sequences within the file.
 
     This function:
         - Uses a SHA256-based global lockfile in `/tmp/filetool-locks` to ensure only one process modifies `path` at a time.
@@ -633,9 +640,10 @@ def append_bytes_to_file(
     Append or ensure presence of a byte sequence in a file.
 
     This function either appends `bytes_payload` to `path` unconditionally,
-    or checks for its presence using logical line comparison (if `unique_bytes=True`)
-    before appending. It supports advisory locking, atomic creation, and optional
-    directory creation. Input must be raw bytes; no encoding or decoding is performed.
+    or checks for its presence using line-by-line comparison (when `line_ending` is provided)
+    or binary substring search (when `line_ending` is None) before appending.
+    It supports advisory locking, atomic creation, and optional directory creation.
+    Input must be raw bytes; no encoding or decoding is performed.
 
     Parameters:
         bytes_payload (bytes): The byte sequence to append. Must not be empty.
@@ -644,10 +652,16 @@ def append_bytes_to_file(
         unique_bytes (bool): If True, do not append if the payload is already present.
         create_if_missing (bool): If True, create the file if it doesn't exist.
         make_parents (bool): If True, create parent directories if needed. Requires `create_if_missing=True`.
-        line_ending (bytes | None): Logical line ending used for deduplication. Required if `unique_bytes=True`.
+        line_ending (bytes | None): Logical line ending used for line-based deduplication. Requires `unique_bytes=True`.
         comment_marker (bytes | None): Optional comment prefix to strip during deduplication. Requires `unique_bytes=True`.
-        ignore_leading_whitespace (bool): Ignore leading whitespace when checking for uniqueness.
-        ignore_trailing_whitespace (bool): Ignore trailing whitespace when checking for uniqueness.
+        ignore_leading_whitespace (bool): Ignore leading whitespace when checking for uniqueness. Requires `unique_bytes=True`.
+        ignore_trailing_whitespace (bool): Ignore trailing whitespace when checking for uniqueness. Requires `unique_bytes=True`.
+
+    Uniqueness behavior when `unique_bytes=True`:
+        - With `line_ending`: Performs line-by-line comparison. Each line in the file is compared
+          to `bytes_payload` (which should include the line ending). Only appends if no matching line exists.
+        - Without `line_ending`: Performs binary substring search. Appends only if `bytes_payload`
+          is not found as a substring anywhere in the file.
 
     Returns:
         int: The number of bytes written (equal to `len(bytes_payload)` if written, else 0).
