@@ -1367,16 +1367,40 @@ def uncomment_line_in_file(
             return line_with_ending  # Already uncommented, no change
 
         # Check if line matches (commented version)
-        if compare_line == target_commented:
-            found_commented = True
-            # If multiple=False and we already uncommented one, leave the rest
-            if not multiple and uncommented_count > 0:
-                return line_with_ending
-            # Uncomment this line by removing the comment prefix
-            uncommented_count += 1
-            return line_bytes + line_ending
+        # Need to check if line starts with comment marker, then compare content
+        if compare_line.startswith(comment_prefix):
+            # Remove comment prefix and compare the content
+            content_after_marker = compare_line[len(comment_prefix) :]
 
-        # No match - return unchanged
+            # Build expected content with whitespace handling
+            expected_content = line_bytes + line_ending
+
+            # Apply whitespace handling to content after marker
+            compare_content = content_after_marker
+            if ignore_leading_whitespace:
+                stripped = compare_content.lstrip()
+                if stripped == line_ending or len(stripped) == 0:
+                    compare_content = line_ending
+                else:
+                    compare_content = stripped
+
+            if ignore_trailing_whitespace:
+                if compare_content.endswith(line_ending):
+                    content_part = compare_content[: -len(line_ending)]
+                    compare_content = content_part.rstrip() + line_ending
+                else:
+                    compare_content = compare_content.rstrip()
+
+            if compare_content == expected_content:
+                found_commented = True
+                # If multiple=False and we already uncommented one, leave the rest
+                if not multiple and uncommented_count > 0:
+                    return line_with_ending
+                # Uncomment this line by removing the comment prefix
+                uncommented_count += 1
+                # Return original line without the comment prefix
+                return line_with_ending[len(comment_prefix) :]
+
         return line_with_ending
 
     # Perform the atomic modification
