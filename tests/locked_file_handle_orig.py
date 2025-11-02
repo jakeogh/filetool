@@ -12,6 +12,7 @@ from typing import cast
 from unittest import mock
 
 import pytest
+
 from filetool.filetool import _locked_file_handle
 from filetool.filetool import _open_eintr_safe
 

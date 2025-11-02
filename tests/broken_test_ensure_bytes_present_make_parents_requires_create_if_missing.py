@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+
 from filetool.filetool import _ensure_bytes_present
 
 

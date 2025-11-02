@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+
 # Assuming filetool.py is in the same directory or importable
 from filetool import _append_bytes_to_file
 

@@ -3,9 +3,9 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-from filetool.filetool import _locked_file_handle
-
 from locked_file_handle_orig import _locked_file_handle_orig
+
+from filetool.filetool import _locked_file_handle
 
 
 @pytest.fixture

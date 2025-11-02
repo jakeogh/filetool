@@ -1,4 +1,5 @@
 import pytest
+
 from filetool import _append_bytes_to_file
 
 
