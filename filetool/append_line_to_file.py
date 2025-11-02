@@ -88,7 +88,7 @@ def append_line_to_file(
         raise ValidationError(
             f"Line contains the line_ending delimiter ({line_ending!r}). "
             f"Options: (1) Use separate calls for multiple lines, "
-            f"(2) Use append_bytes_to_path for multi-line data, or "
+            f"(2) Use append_bytes_to_file for multi-line data, or "
             f"(3) Choose a different line_ending that doesn't appear in your data.",
             cli_msg=(
                 f"Line contains the line_ending delimiter ({line_ending!r}). "

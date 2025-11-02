@@ -19,6 +19,8 @@ from typing import Any
 from typing import BinaryIO
 from typing import cast
 
+from .splitlines_bytes import splitlines_bytes
+
 # from rich.traceback import install
 # install(show_locals=True)
 

@@ -1,10 +1,8 @@
 import errno
 import fcntl
-import io
 import multiprocessing
 import os
 import shutil
-import sys
 import tempfile
 import time
 from multiprocessing import Process
@@ -15,7 +13,7 @@ from unittest import mock
 import pytest
 from filetool.filetool import _locked_file_handle
 
-from _locked_file_handle_orig import _locked_file_handle_orig
+from locked_file_handle_orig import _locked_file_handle_orig
 
 
 @pytest.mark.parametrize(

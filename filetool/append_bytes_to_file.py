@@ -13,7 +13,7 @@ from .filetool import _append_bytes_to_file
 from .validation import ValidationError
 
 
-def append_bytes_to_path(
+def append_bytes_to_file(
     *,
     data: bytes,
     path: Path,

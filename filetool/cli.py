@@ -12,7 +12,7 @@ from pathlib import Path
 
 import click
 
-from .append_bytes_to_path import append_bytes_to_path
+from .append_bytes_to_file import append_bytes_to_file
 from .append_line_to_file import append_line_to_file
 from .validation import ValidationError
 
@@ -65,11 +65,6 @@ CLICK_GLOBAL_OPTIONS = [
         "--require-new",
         is_flag=True,
         help="Require that the file not already exist. (todo)",
-    ),
-    click.option(
-        "--dry-run",
-        is_flag=True,
-        help="Simulate write: show what would be written, do not modify the file.",
     ),
 ]
 
@@ -234,7 +229,7 @@ def append_bytes_command(
     # Write each payload
     for data in bytes_payloads:
         try:
-            bytes_written = append_bytes_to_path(
+            bytes_written = append_bytes_to_file(
                 data=data,
                 path=path,
                 unique=unique_bytes,

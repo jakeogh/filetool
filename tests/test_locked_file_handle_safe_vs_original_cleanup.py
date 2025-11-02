@@ -1,21 +1,11 @@
-import errno
-import fcntl
-import io
-import os
-import sys
 import tempfile
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
-from typing import BinaryIO
-from typing import cast
 from unittest import mock
 
 import pytest
 from filetool.filetool import _locked_file_handle
-from filetool.filetool import _open_eintr_safe
 
-from _locked_file_handle_orig import _locked_file_handle_orig
+from locked_file_handle_orig import _locked_file_handle_orig
 
 
 @pytest.fixture

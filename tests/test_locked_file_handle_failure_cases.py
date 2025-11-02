@@ -6,7 +6,7 @@ from unittest import mock
 import pytest
 from filetool.filetool import _locked_file_handle
 
-from _locked_file_handle_orig import _locked_file_handle_orig
+from locked_file_handle_orig import _locked_file_handle_orig
 
 
 @pytest.fixture

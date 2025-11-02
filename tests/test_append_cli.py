@@ -267,18 +267,6 @@ def test_make_parents(
         assert result.exit_code != 0
 
 
-def test_dry_run(tmpfile):
-    """Test dry-run mode doesn't modify file."""
-    runner = CliRunner()
-    result = runner.invoke(
-        cli, ["append-line", "test", "--path", str(tmpfile), "--dry-run"]
-    )
-    assert result.exit_code == 0, result.output
-    assert "[filetool append-line][dry-run]" in result.output
-    assert "Would write" in result.output
-    assert not tmpfile.exists()
-
-
 def test_do_not_create_missing_file(tmpfile):
     """Test that --do-not-create flag prevents file creation."""
     runner = CliRunner()
@@ -598,27 +586,6 @@ def test_symlink_follow(tmpfile, tmp_path):
     result = runner.invoke(cli, ["append-line", "added", "--path", str(symlink)])
     assert result.exit_code == 0, result.output
     assert real_file.read_text() == "original\nadded\n"
-
-
-def test_dry_run_with_unique(tmpfile):
-    """Test dry-run with unique flag."""
-    tmpfile.write_text("existing\n")
-    runner = CliRunner()
-    result = runner.invoke(
-        cli,
-        [
-            "append-line",
-            "test",
-            "--path",
-            str(tmpfile),
-            "--unique",
-            "--dry-run",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert "[dry-run]" in result.output
-    # File should be unchanged
-    assert read_file(tmpfile) == b"existing\n"
 
 
 def test_require_new_placeholder(tmpfile):
