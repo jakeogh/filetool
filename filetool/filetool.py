@@ -1363,3 +1363,192 @@ def ensure_line_in_config_file(
         ignore_leading_whitespace=ignore_leading_whitespace,
         ignore_trailing_whitespace=True,
     )
+
+
+def uncomment_line_in_file(
+    *,
+    path: Path,
+    line: str,
+    comment_marker: str = "#",
+    line_ending: bytes = b"\n",
+    ignore_leading_whitespace: bool = True,
+    ignore_trailing_whitespace: bool = True,
+    multiple: bool = False,
+) -> int:
+    """
+    Uncomment one or all occurrences of a commented line in a file.
+
+    This function searches for lines that match the specified line content
+    (when the comment marker is removed) and removes the comment marker from
+    matching lines. All changes are applied atomically in a single operation
+    with full locking guarantees.
+
+    Typical use case: Re-enable configuration lines that were previously
+    commented out.
+
+    Atomicity guarantees:
+        - Uses same global locking as append operations
+        - Detects file replacement via inode checking
+        - Uses hardlink trick to prevent race conditions
+        - All changes applied atomically via write-to-temp + rename
+
+    Parameters:
+        path (Path): Path to the file to modify. Must exist.
+        line (str): The line content to uncomment (without line ending or comment marker).
+                    For example: "export FOO=bar" not "# export FOO=bar\n"
+        comment_marker (str): Comment prefix to remove. Default: "#"
+                             The function expects "# " (marker + space) before the line.
+        line_ending (bytes): Line ending delimiter. Default: b"\n" (LF)
+        ignore_leading_whitespace (bool): If True, ignore leading whitespace when matching lines.
+        ignore_trailing_whitespace (bool): If True, ignore trailing whitespace when matching lines.
+        multiple (bool): If False (default), uncomment only the first occurrence.
+                        If True, uncomment all occurrences.
+
+    Returns:
+        int: Number of lines that were uncommented.
+             Returns 0 if line exists but is already uncommented (idempotent behavior).
+
+    Raises:
+        ValueError: If the line is not found in the file (neither commented nor uncommented)
+        FileNotFoundError: If the file doesn't exist
+        OSError: If file is replaced during modification or other I/O errors
+        PermissionError: If insufficient permissions
+        TypeError: If parameters have wrong types
+
+    Example:
+        # Uncomment the first FOO export
+        count = uncomment_line_in_file(
+            path=Path("/etc/environment"),
+            line="export FOO=bar",
+            comment_marker="#",
+        )
+        print(f"Uncommented {count} lines")
+
+        # File before:
+        # export PATH=/usr/bin
+        # # export FOO=bar
+        # export BAR=baz
+        # # export FOO=bar
+        #
+        # File after (multiple=False):
+        # export PATH=/usr/bin
+        # export FOO=bar
+        # export BAR=baz
+        # # export FOO=bar
+
+        # File after (multiple=True):
+        # export PATH=/usr/bin
+        # export FOO=bar
+        # export BAR=baz
+        # export FOO=bar
+
+    Notes:
+        - Lines without the comment marker will NOT be modified
+        - Whitespace handling is only applied to matching logic
+        - The uncommented line preserves its original formatting
+        - This is a line-oriented operation; partial line matches are not supported
+        - Uses same locking mechanism as append operations (cooperating processes only)
+        - Idempotent: if line is already uncommented, returns 0 with no error
+    """
+
+    # Parameter validation
+    if not isinstance(path, Path):
+        raise TypeError(f"path must be Path, got {type(path).__name__}")
+    if not isinstance(line, str):
+        raise TypeError(f"line must be str, got {type(line).__name__}")
+    if not isinstance(comment_marker, str):
+        raise TypeError(
+            f"comment_marker must be str, got {type(comment_marker).__name__}"
+        )
+    if not isinstance(line_ending, bytes):
+        raise TypeError(f"line_ending must be bytes, got {type(line_ending).__name__}")
+    if not isinstance(multiple, bool):
+        raise TypeError(f"multiple must be bool, got {type(multiple).__name__}")
+
+    if len(line) == 0:
+        raise ValueError("line must not be empty")
+    if len(comment_marker) == 0:
+        raise ValueError("comment_marker must not be empty")
+    if len(line_ending) == 0:
+        raise ValueError("line_ending must not be empty")
+
+    # Encode for byte-level operations
+    line_bytes = line.encode("utf-8", errors="strict")
+    comment_prefix = (comment_marker + " ").encode("utf-8", errors="strict")
+
+    # Check that line doesn't contain line_ending
+    if line_ending in line_bytes:
+        raise ValueError(
+            f"line contains the line_ending delimiter ({line_ending!r}). "
+            f"This function operates on single lines only. "
+            f"Use separate calls for multiple lines or choose a different line_ending."
+        )
+
+    # Build target patterns
+    target_uncommented = line_bytes + line_ending
+    target_commented = comment_prefix + line_bytes + line_ending
+
+    # Track what we find
+    found_uncommented = False
+    found_commented = False
+    uncommented_count = 0
+
+    # Define the transformer function
+    def transformer(line_with_ending: bytes) -> bytes:
+        nonlocal found_uncommented, found_commented, uncommented_count
+
+        # Build comparison line respecting whitespace options
+        compare_line = line_with_ending
+
+        if ignore_leading_whitespace:
+            # Strip leading whitespace but preserve line_ending
+            stripped = compare_line.lstrip()
+            if stripped == line_ending or len(stripped) == 0:
+                # Line is only whitespace
+                compare_line = line_ending
+            else:
+                compare_line = stripped
+
+        if ignore_trailing_whitespace:
+            # Strip trailing whitespace but preserve line_ending
+            if compare_line.endswith(line_ending):
+                content = compare_line[: -len(line_ending)]
+                compare_line = content.rstrip() + line_ending
+            else:
+                compare_line = compare_line.rstrip()
+
+        # Check if line matches (uncommented version)
+        if compare_line == target_uncommented:
+            found_uncommented = True
+            return line_with_ending  # Already uncommented, no change
+
+        # Check if line matches (commented version)
+        if compare_line == target_commented:
+            found_commented = True
+            # If multiple=False and we already uncommented one, leave the rest
+            if not multiple and uncommented_count > 0:
+                return line_with_ending
+            # Uncomment this line by removing the comment prefix
+            uncommented_count += 1
+            return line_bytes + line_ending
+
+        # No match - return unchanged
+        return line_with_ending
+
+    # Perform the atomic modification
+    _modify_file_lines(
+        path=path,
+        line_transformer=transformer,
+        line_ending=line_ending,
+    )
+
+    # Post-operation validation
+    if not found_uncommented and not found_commented:
+        raise ValueError(
+            f"Line not found in file: {line!r}. "
+            f"The line must exist (either commented or uncommented) to use this function."
+        )
+
+    # If line exists but is already uncommented, that's fine - goal achieved
+    # Return 0 to indicate no changes were needed (idempotent behavior)
+    return uncommented_count

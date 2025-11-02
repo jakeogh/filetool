@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from filetool import ensure_bytes_present
+from filetool.filetool import ensure_bytes_present
 
 
 def test_ensure_bytes_present_make_parents_requires_create_if_missing(tmp_path: Path):

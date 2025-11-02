@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from filetool import ensure_bytes_present
+from filetool.filetool import ensure_bytes_present
 
 
 def make_kwargs(**overrides):

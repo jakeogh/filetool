@@ -12,8 +12,8 @@ from typing import cast
 from unittest import mock
 
 import pytest
-from filetool import locked_file_handle
-from filetool import open_eintr_safe
+from filetool.filetool import locked_file_handle
+from filetool.filetool import open_eintr_safe
 
 
 @contextmanager

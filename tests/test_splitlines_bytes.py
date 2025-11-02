@@ -8,7 +8,7 @@ import sys
 from typing import BinaryIO
 
 import pytest
-from filetool import \
+from filetool.filetool import \
     splitlines_bytes  # make sure filetool.py is on your PYTHONPATH
 
 
@@ -32,7 +32,7 @@ def test_splitlines_bytes_overlap_comment_in_delim():
 
     expected = [b"payload##", b"##", b"next"]
 
-    from filetool import splitlines_bytes
+    from filetool.filetool import splitlines_bytes
 
     from test_splitlines_bytes import reference_split
 
@@ -481,7 +481,7 @@ def test_fuzz_splitlines_bytes_stream():
 # ----------------------------
 
 import pytest
-from filetool import splitlines_bytes
+from filetool.filetool import splitlines_bytes
 
 
 def test_fuzz_splitlines_bytes_edge_cases():
