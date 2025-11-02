@@ -25,13 +25,10 @@ from .splitlines_bytes import splitlines_bytes
 # install(show_locals=True)
 
 __all__ = [
-    "_append_bytes_to_file",
-    "_locked_file_handle",
     "splitlines_bytes",
-    "_ensure_bytes_present",
     "ensure_line_in_config_file",
-    "_open_eintr_safe",
     "comment_out_line_in_file",
+    "uncomment_line_in_file",
 ]
 
 Constraint = dict[str, Any]
