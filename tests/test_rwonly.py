@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 # Assuming filetool.py is in the same directory or importable
-from filetool import append_bytes_to_file
+from filetool import _append_bytes_to_file
 
 
 def test_filetool_triggers_create_with_wronly_mode():
@@ -16,7 +16,7 @@ def test_filetool_triggers_create_with_wronly_mode():
         payload = b"unique line\n"
 
         # We force a condition that guarantees the file will be created
-        bytes_written = append_bytes_to_file(
+        bytes_written = _append_bytes_to_file(
             bytes_payload=payload,
             path=test_path,
             unlink_first=False,

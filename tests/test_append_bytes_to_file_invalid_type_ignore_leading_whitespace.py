@@ -1,14 +1,14 @@
 from pathlib import Path
 
 import pytest
-from filetool import append_bytes_to_file
+from filetool import _append_bytes_to_file
 
 
-def test_append_bytes_to_file_invalid_type_ignore_leading_whitespace():
+def test__append_bytes_to_file_invalid_type_ignore_leading_whitespace():
     with pytest.raises(
         TypeError, match=r"ignore_leading_whitespace must be of type <class 'bool'>"
     ):
-        append_bytes_to_file(
+        _append_bytes_to_file(
             bytes_payload=b"abc",
             path=Path("/tmp/dummy"),
             unique_bytes=True,

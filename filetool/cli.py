@@ -13,7 +13,7 @@ from pathlib import Path
 import click
 
 from .append_bytes_to_path import append_bytes_to_path
-from .append_line_to_path import append_line_to_path
+from .append_line_to_file import append_line_to_file
 from .validation import ValidationError
 
 # =============================================================================
@@ -117,7 +117,6 @@ def append_line_command(
     make_parents: bool,
     unlink_first: bool,
     require_new: bool,
-    dry_run: bool,
     line_ending_code: str,
     comment_marker: str,
     ignore_leading_whitespace: bool,
@@ -140,15 +139,8 @@ def append_line_command(
 
     # Process each line
     for line in lines:
-        if dry_run:
-            click.echo(
-                f"[filetool append-line][dry-run] Would write: "
-                f"{(line.encode('utf-8') + line_ending)!r} to {path}"
-            )
-            continue
-
         try:
-            bytes_written = append_line_to_path(
+            bytes_written = append_line_to_file(
                 line=line,
                 path=path,
                 unique=unique_line,
@@ -159,7 +151,6 @@ def append_line_command(
                 create_if_missing=create_if_missing,
                 make_parents=make_parents,
                 unlink_first=unlink_first,
-                dry_run=False,  # Already handled above
             )
 
             if bytes_written:
@@ -204,7 +195,6 @@ def append_bytes_command(
     unlink_first: bool,
     require_new: bool,
     hex_input: bool,
-    dry_run: bool,
 ):
     """Append BYTES to a file with control over creation, uniqueness, and error handling."""
 
@@ -243,12 +233,6 @@ def append_bytes_command(
 
     # Write each payload
     for data in bytes_payloads:
-        if dry_run:
-            click.echo(
-                f"[filetool append-bytes][dry-run] Would write: {data!r} to {path}"
-            )
-            continue
-
         try:
             bytes_written = append_bytes_to_path(
                 data=data,
@@ -257,7 +241,6 @@ def append_bytes_command(
                 create_if_missing=create_if_missing,
                 make_parents=make_parents,
                 unlink_first=unlink_first,
-                dry_run=False,  # Already handled above
             )
 
             if bytes_written:

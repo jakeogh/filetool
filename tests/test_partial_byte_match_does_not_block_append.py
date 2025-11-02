@@ -2,7 +2,7 @@
 import tempfile
 from pathlib import Path
 
-from filetool import append_bytes_to_file
+from filetool import _append_bytes_to_file
 
 
 def test_partial_byte_match_does_not_block_append():
@@ -10,7 +10,7 @@ def test_partial_byte_match_does_not_block_append():
         path = Path(tmpdir) / "testfile"
 
         # Write full line
-        append_bytes_to_file(
+        _append_bytes_to_file(
             bytes_payload=b"hello-world\n",
             path=path,
             unique_bytes=True,
@@ -21,7 +21,7 @@ def test_partial_byte_match_does_not_block_append():
         )
 
         # Try appending a substring
-        append_bytes_to_file(
+        _append_bytes_to_file(
             bytes_payload=b"world\n",  # This is a substring of the previous line
             path=path,
             unique_bytes=True,

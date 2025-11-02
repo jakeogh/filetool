@@ -23,12 +23,12 @@ from typing import cast
 # install(show_locals=True)
 
 __all__ = [
-    "append_bytes_to_file",
-    "locked_file_handle",
+    "_append_bytes_to_file",
+    "_locked_file_handle",
     "splitlines_bytes",
-    "ensure_bytes_present",
+    "_ensure_bytes_present",
     "ensure_line_in_config_file",
-    "open_eintr_safe",
+    "_open_eintr_safe",
     "comment_out_line_in_file",
 ]
 
@@ -43,13 +43,13 @@ LOCK_DIR.mkdir(
 )
 
 
-def get_lockfile_path(target_path: Path) -> Path:
+def _get_lockfile_path(target_path: Path) -> Path:
     canonical_path = str(target_path.resolve())
     digest = hashlib.sha256(canonical_path.encode("utf-8")).hexdigest()
     return LOCK_DIR / digest
 
 
-def fsync_eintr_safe(fd: int):
+def _fsync_eintr_safe(fd: int):
     while True:
         try:
             return os.fsync(fd)
@@ -59,7 +59,7 @@ def fsync_eintr_safe(fd: int):
             raise
 
 
-def open_eintr_safe(*args, **kwargs):
+def _open_eintr_safe(*args, **kwargs):
     while True:
         try:
             return os.open(*args, **kwargs)
@@ -69,14 +69,14 @@ def open_eintr_safe(*args, **kwargs):
             raise
 
 
-def open_with_mode(
+def _open_with_mode(
     path: os.PathLike,
     flags: int,
     mode: int,
 ) -> int:
     old_umask = os.umask(0)
     try:
-        return open_eintr_safe(
+        return _open_eintr_safe(
             path,
             flags,
             mode,
@@ -86,7 +86,7 @@ def open_with_mode(
 
 
 @contextmanager
-def locked_file_handle(
+def _locked_file_handle(
     *,
     path: Path,
     mode: str,
@@ -127,14 +127,14 @@ def locked_file_handle(
         - This does not protect against non-cooperating writers or low-level race conditions.
 
     Example:
-        >>> with locked_file_handle(Path("/tmp/data.bin"), mode="rb+") as fh:
+        >>> with _locked_file_handle(Path("/tmp/data.bin"), mode="rb+") as fh:
         >>>     data = fh.read()
         >>>     fh.seek(0)
         >>>     fh.write(data + b"\n")
 
     Note:
         - This only applies file-level advisory locking via `fcntl.flock`.
-        - To ensure inter-process correctness, this is typically used *alongside a global per-path lockfile* (see `ensure_bytes_present()`).
+        - To ensure inter-process correctness, this is typically used *alongside a global per-path lockfile* (see `_ensure_bytes_present()`).
         - Guarantees release of lock even if close() fails.
         - Escalates via os.close(fileno()) if necessary.
         - Emits warnings instead of silently failing on unlock/close.
@@ -144,7 +144,7 @@ def locked_file_handle(
         # Must use O_RDWR here for some platforms: later re-open expects 'rb+' (read/write)
         flags = os.O_CREAT | os.O_EXCL | os.O_RDWR
         try:
-            fd = open_eintr_safe(path, flags)
+            fd = _open_eintr_safe(path, flags)
             os.close(fd)
         except FileExistsError:
             pass
@@ -198,7 +198,7 @@ def locked_file_handle(
 
 
 @contextmanager
-def safe_open_rw_binary(
+def _safe_open_rw_binary(
     path: Path,
     *,
     require_exists: bool,
@@ -207,7 +207,7 @@ def safe_open_rw_binary(
     Open a file in 'rb+' mode, atomically creating it if it doesn't exist,
     and acquire an advisory exclusive lock.
 
-    This wraps `locked_file_handle()` and ensures the file exists beforehand,
+    This wraps `_locked_file_handle()` and ensures the file exists beforehand,
     avoiding race conditions with concurrent creators.
 
     - If the file exists: opens in 'rb+' without altering timestamps.
@@ -218,7 +218,7 @@ def safe_open_rw_binary(
         BinaryIO: A file object locked and opened in 'rb+' mode.
     """
     try:
-        with locked_file_handle(
+        with _locked_file_handle(
             path=path,
             mode="rb+",
             blocking=True,
@@ -228,7 +228,7 @@ def safe_open_rw_binary(
     except FileNotFoundError:
         if require_exists:
             raise
-        with locked_file_handle(
+        with _locked_file_handle(
             path=path,
             mode="rb+",
             blocking=True,
@@ -237,7 +237,7 @@ def safe_open_rw_binary(
             yield fh
 
 
-def validate_args(
+def _validate_args(
     *,
     function_name: str,
     args: dict,
@@ -341,7 +341,7 @@ def find_bytes_offset_in_stream(
     return None
 
 
-def ensure_bytes_present(
+def _ensure_bytes_present(
     *,
     path: Path,
     bytes_payload: bytes,
@@ -439,8 +439,8 @@ def ensure_bytes_present(
         ),
     ]
 
-    validate_args(
-        function_name="ensure_bytes_present",
+    _validate_args(
+        function_name="_ensure_bytes_present",
         args=locals(),
         constraints=PARAM_CONSTRAINTS,
         conflicts=CONFLICTS,
@@ -454,9 +454,9 @@ def ensure_bytes_present(
         path.parent.mkdir(parents=True, exist_ok=True)
 
     # global lock to allow mutiple instances to run concurrently without file corruption
-    lock_path = get_lockfile_path(path)
+    lock_path = _get_lockfile_path(path)
     # without 0o666 the root user might create a lockfile that the normal user cant acquire a lock on.
-    lock_fd = open_with_mode(
+    lock_fd = _open_with_mode(
         lock_path,
         os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW,
         0o666,
@@ -464,7 +464,7 @@ def ensure_bytes_present(
     try:
         fcntl.flock(lock_fd, fcntl.LOCK_EX)
 
-        with locked_file_handle(
+        with _locked_file_handle(
             path=path,
             mode="rb+",
             blocking=True,
@@ -494,13 +494,13 @@ def ensure_bytes_present(
             fh.seek(0, os.SEEK_END)
             fh.write(bytes_payload)
             fh.flush()
-            fsync_eintr_safe(fh.fileno())
+            _fsync_eintr_safe(fh.fileno())
             return len(bytes_payload)
     finally:
         os.close(lock_fd)
 
 
-def append_bytes_to_file(
+def _append_bytes_to_file(
     *,
     bytes_payload: bytes,
     path: Path,
@@ -608,8 +608,8 @@ def append_bytes_to_file(
         ),
     ]
 
-    validate_args(
-        function_name="append_bytes_to_file",
+    _validate_args(
+        function_name="_append_bytes_to_file",
         args=locals(),
         constraints=PARAM_CONSTRAINTS,
         conflicts=CONFLICTS,
@@ -629,7 +629,7 @@ def append_bytes_to_file(
             with open(path, "xb") as fh:
                 fh.write(bytes_payload)
                 fh.flush()
-                fsync_eintr_safe(fh.fileno())
+                _fsync_eintr_safe(fh.fileno())
         except FileExistsError as exc:
             raise FileExistsError(
                 f"Race detected: file {path} was recreated before atomic write (unlink_first=True)"
@@ -645,7 +645,7 @@ def append_bytes_to_file(
     #
     # Fall back to create file (and parent dir if allowed)
     try:
-        bytes_written = ensure_bytes_present(
+        bytes_written = _ensure_bytes_present(
             path=path,
             bytes_payload=bytes_payload,
             unique_bytes=unique_bytes,
@@ -674,12 +674,12 @@ def append_bytes_to_file(
         # unique_line could be True or False
 
         try:
-            # Use safe_open_rw_binary to handle 'rb+' access race-safely:
+            # Use _safe_open_rw_binary to handle 'rb+' access race-safely:
             # - File may not exist yet (create it)
             # - Or it may exist already due to a race (open it safely)
             # - Either way, we may need to read it if a race created it already
 
-            bytes_written = ensure_bytes_present(
+            bytes_written = _ensure_bytes_present(
                 path=path,
                 bytes_payload=bytes_payload,
                 unique_bytes=unique_bytes,
@@ -704,7 +704,7 @@ def append_bytes_to_file(
             # - If it happens again, the parent was likely removed by another race.
             # - At this point, we've already tried to ensure the directory exists.
             # - Let the error surface for visibility instead of silently looping.
-            bytes_written = ensure_bytes_present(
+            bytes_written = _ensure_bytes_present(
                 path=path,
                 bytes_payload=bytes_payload,
                 unique_bytes=unique_bytes,
@@ -791,11 +791,11 @@ def _modify_file_lines(
     if not callable(line_transformer):
         raise TypeError("line_transformer must be callable")
 
-    # HOOK:step_1_get_lockfile_path
+    # HOOK:step_1__get_lockfile_path
     # Acquire global lock to serialize access across all cooperating processes
-    lock_path = get_lockfile_path(path)
+    lock_path = _get_lockfile_path(path)
     # HOOK:step_2_open_lockfile
-    lock_fd = open_with_mode(
+    lock_fd = _open_with_mode(
         lock_path,
         os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW,
         0o666,  # Allow all users to acquire lock
@@ -816,9 +816,9 @@ def _modify_file_lines(
         # HOOK:step_5_record_inode
         inode_before = stat_before.st_ino
 
-        # HOOK:step_6_call_locked_file_handle
+        # HOOK:step_6_call__locked_file_handle
         # Open file with advisory lock
-        with locked_file_handle(
+        with _locked_file_handle(
             path=path,
             mode="rb+",
             blocking=True,
@@ -905,7 +905,7 @@ def _modify_file_lines(
                         temp_fh.write(line)
                     # HOOK:step_21_flush_and_fsync
                     temp_fh.flush()
-                    fsync_eintr_safe(temp_fh.fileno())
+                    _fsync_eintr_safe(temp_fh.fileno())
 
                 # HOOK:step_23_chmod_temp
                 # Copy permissions from original file
@@ -1225,7 +1225,7 @@ def ensure_line_in_config_file(
 ):
 
     _bytes = line.encode("utf8", errors="strict")
-    _ = append_bytes_to_file(
+    _ = _append_bytes_to_file(
         bytes_payload=_bytes,
         path=path,
         unique_bytes=True,

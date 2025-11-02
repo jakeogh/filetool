@@ -1,14 +1,14 @@
 from pathlib import Path
 
 import pytest
-from filetool import append_bytes_to_file
+from filetool import _append_bytes_to_file
 
 
-def test_append_bytes_to_file_make_parents_without_create_if_missing():
+def test__append_bytes_to_file_make_parents_without_create_if_missing():
     with pytest.raises(
         ValueError, match=r"make_parents=True requires create_if_missing=True"
     ):
-        append_bytes_to_file(
+        _append_bytes_to_file(
             bytes_payload=b"test\n",
             path=Path("/tmp/dummy"),
             unlink_first=False,

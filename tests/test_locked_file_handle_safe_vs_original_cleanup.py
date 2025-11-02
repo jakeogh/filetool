@@ -12,10 +12,10 @@ from typing import cast
 from unittest import mock
 
 import pytest
-from filetool.filetool import locked_file_handle
-from filetool.filetool import open_eintr_safe
+from filetool.filetool import _locked_file_handle
+from filetool.filetool import _open_eintr_safe
 
-from locked_file_handle_orig import locked_file_handle_orig
+from _locked_file_handle_orig import _locked_file_handle_orig
 
 
 @pytest.fixture
@@ -34,11 +34,11 @@ def temp_file():
 @pytest.mark.parametrize(
     "which_fn,should_suppress_close_exception",
     [
-        (locked_file_handle_orig, False),
-        (locked_file_handle, True),
+        (_locked_file_handle_orig, False),
+        (_locked_file_handle, True),
     ],
 )
-def test_locked_file_handle_cleanup_strategy(
+def test__locked_file_handle_cleanup_strategy(
     temp_file,
     which_fn,
     should_suppress_close_exception,
@@ -111,11 +111,11 @@ def test_locked_file_handle_cleanup_strategy(
 # @pytest.mark.parametrize(
 #    "which_fn,should_suppress_close_exception",
 #    [
-#        (locked_file_handle_orig, False),
-#        (locked_file_handle, True),
+#        (_locked_file_handle_orig, False),
+#        (_locked_file_handle, True),
 #    ],
 # )
-# def test_locked_file_handle_cleanup_strategy(
+# def test__locked_file_handle_cleanup_strategy(
 #    temp_file, which_fn, should_suppress_close_exception, capsys
 # ):
 #    """

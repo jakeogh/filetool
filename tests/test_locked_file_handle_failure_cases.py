@@ -4,9 +4,9 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-from filetool.filetool import locked_file_handle
+from filetool.filetool import _locked_file_handle
 
-from locked_file_handle_orig import locked_file_handle_orig
+from _locked_file_handle_orig import _locked_file_handle_orig
 
 
 @pytest.fixture
@@ -25,8 +25,8 @@ def temp_file():
 @pytest.mark.parametrize(
     "which_fn,expect_close_exception",
     [
-        (locked_file_handle_orig, True),
-        (locked_file_handle, False),
+        (_locked_file_handle_orig, True),
+        (_locked_file_handle, False),
     ],
 )
 def test_fh_close_failure_does_not_release_lock_param(
@@ -96,7 +96,7 @@ def test_unlock_fails_but_close_succeeds(temp_file):
         ) as mock_flock,
         mock.patch("builtins.print") as mock_print,
     ):
-        with locked_file_handle(
+        with _locked_file_handle(
             path=temp_file,
             mode="rb+",
             blocking=True,
@@ -124,8 +124,8 @@ def test_unlock_fails_but_close_succeeds(temp_file):
 @pytest.mark.parametrize(
     "which_fn, expect_exception, expect_unlock_warning, expect_close_warning",
     [
-        (locked_file_handle_orig, True, True, False),
-        (locked_file_handle, False, True, True),
+        (_locked_file_handle_orig, True, True, False),
+        (_locked_file_handle, False, True, True),
     ],
 )
 def test_unlock_and_close_both_fail_param(

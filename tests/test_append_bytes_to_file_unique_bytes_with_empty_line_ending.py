@@ -1,12 +1,12 @@
 from pathlib import Path
 
 import pytest
-from filetool import append_bytes_to_file
+from filetool import _append_bytes_to_file
 
 
-def test_append_bytes_to_file_unique_bytes_with_empty_line_ending():
+def test__append_bytes_to_file_unique_bytes_with_empty_line_ending():
     with pytest.raises(ValueError, match="line_ending must not be empty if set"):
-        append_bytes_to_file(
+        _append_bytes_to_file(
             bytes_payload=b"test\n",
             path=Path("/tmp/dummy"),
             unlink_first=False,

@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .filetool import append_bytes_to_file
+from .filetool import _append_bytes_to_file
 from .validation import ValidationError
 
 
-def append_line_to_path(
+def append_line_to_file(
     *,
     line: str,
     path: Path,
@@ -25,7 +25,6 @@ def append_line_to_path(
     create_if_missing: bool = True,
     make_parents: bool = False,
     unlink_first: bool = False,
-    dry_run: bool = False,
 ) -> int:
     """
     Append a single line to a file with automatic line ending.
@@ -41,7 +40,6 @@ def append_line_to_path(
         create_if_missing: Create file if it doesn't exist
         make_parents: Create parent directories if needed
         unlink_first: Unlink file before writing (requires unique=True)
-        dry_run: Show what would be written without modifying file
 
     Returns:
         Number of bytes written (0 if already present with unique=True)
@@ -103,12 +101,8 @@ def append_line_to_path(
     # Add line ending
     bytes_payload = line_bytes + line_ending
 
-    # Dry run
-    if dry_run:
-        return len(bytes_payload)
-
     # Write
-    return append_bytes_to_file(
+    return _append_bytes_to_file(
         bytes_payload=bytes_payload,
         path=path,
         unique_bytes=unique,

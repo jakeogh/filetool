@@ -12,13 +12,13 @@ from typing import cast
 from unittest import mock
 
 import pytest
-from filetool.filetool import locked_file_handle
-from filetool.filetool import open_eintr_safe
+from filetool.filetool import _locked_file_handle
+from filetool.filetool import _open_eintr_safe
 
 
 @contextmanager
 # pylint: disable=missing-raises-doc  # W9006
-def locked_file_handle_orig(
+def _locked_file_handle_orig(
     *,
     path: Path,
     mode: str,
@@ -59,14 +59,14 @@ def locked_file_handle_orig(
         - This does not protect against non-cooperating writers or low-level race conditions.
 
     Example:
-        >>> with locked_file_handle(Path("/tmp/data.bin"), mode="rb+") as fh:
+        >>> with _locked_file_handle(Path("/tmp/data.bin"), mode="rb+") as fh:
         >>>     data = fh.read()
         >>>     fh.seek(0)
         >>>     fh.write(data + b"\n")
 
     Note:
         - This only applies file-level advisory locking via `fcntl.flock`.
-        - To ensure inter-process correctness, this is typically used *alongside a global per-path lockfile* (see `ensure_bytes_present()`).
+        - To ensure inter-process correctness, this is typically used *alongside a global per-path lockfile* (see `_ensure_bytes_present()`).
 
     """
 
@@ -75,7 +75,7 @@ def locked_file_handle_orig(
         # Must use O_RDWR here for some platforms: later re-open expects 'rb+' (read/write)
         flags = os.O_CREAT | os.O_EXCL | os.O_RDWR
         try:
-            fd = open_eintr_safe(path, flags) # todo: 0o600? # fmt: skip
+            fd = _open_eintr_safe(path, flags) # todo: 0o600? # fmt: skip
             os.close(fd)
         except FileExistsError:
             pass

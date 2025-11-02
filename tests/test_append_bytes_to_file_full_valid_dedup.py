@@ -1,11 +1,11 @@
 from pathlib import Path
 
 import pytest
-from filetool import append_bytes_to_file
+from filetool import _append_bytes_to_file
 
 
-def test_append_bytes_to_file_full_valid_dedup():
-    append_bytes_to_file(
+def test__append_bytes_to_file_full_valid_dedup():
+    _append_bytes_to_file(
         bytes_payload=b"abc\n",
         path=Path("/tmp/dummy"),
         unique_bytes=True,

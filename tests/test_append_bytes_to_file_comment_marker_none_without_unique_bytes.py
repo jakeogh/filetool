@@ -1,12 +1,12 @@
 from pathlib import Path
 
 import pytest
-from filetool import append_bytes_to_file
+from filetool import _append_bytes_to_file
 
 
-def test_append_bytes_to_file_comment_marker_none_without_unique_bytes():
+def test__append_bytes_to_file_comment_marker_none_without_unique_bytes():
     # This should not raise
-    append_bytes_to_file(
+    _append_bytes_to_file(
         bytes_payload=b"test\n",
         path=Path("/tmp/dummy"),
         unlink_first=False,

@@ -30,7 +30,7 @@ import sys
 import time
 import threading
 from pathlib import Path
-from filetool import append_bytes_to_file
+from filetool import _append_bytes_to_file
 
 def handler(signum, frame):
     pass  # no-op handler
@@ -48,7 +48,7 @@ def signal_spammer():
 spammer = threading.Thread(target=signal_spammer, daemon=True)
 spammer.start()
 
-result = append_bytes_to_file(
+result = _append_bytes_to_file(
     bytes_payload=b"data\\n",
     path=path,
     unique_bytes=False,
@@ -91,7 +91,7 @@ import sys
 import time
 import threading
 from pathlib import Path
-from filetool import append_bytes_to_file
+from filetool import _append_bytes_to_file
 
 def handler(signum, frame):
     pass
@@ -109,7 +109,7 @@ def signal_spammer():
 spammer = threading.Thread(target=signal_spammer, daemon=True)
 spammer.start()
 
-result = append_bytes_to_file(
+result = _append_bytes_to_file(
     bytes_payload=b"line3\\n",
     path=path,
     unique_bytes=True,
@@ -152,7 +152,7 @@ import sys
 import time
 import threading
 from pathlib import Path
-from filetool import append_bytes_to_file
+from filetool import _append_bytes_to_file
 
 def handler(signum, frame):
     pass
@@ -170,7 +170,7 @@ def signal_spammer():
 spammer = threading.Thread(target=signal_spammer, daemon=True)
 spammer.start()
 
-result = append_bytes_to_file(
+result = _append_bytes_to_file(
     bytes_payload=b"existing\\n",
     path=path,
     unique_bytes=True,
@@ -213,7 +213,7 @@ import sys
 import time
 import threading
 from pathlib import Path
-from filetool import append_bytes_to_file
+from filetool import _append_bytes_to_file
 
 def handler(signum, frame):
     pass
@@ -230,7 +230,7 @@ def signal_spammer():
 spammer = threading.Thread(target=signal_spammer, daemon=True)
 spammer.start()
 
-result = append_bytes_to_file(
+result = _append_bytes_to_file(
     bytes_payload=b"newdata\\n",
     path=path,
     unique_bytes=False,
@@ -272,7 +272,7 @@ import sys
 import time
 import threading
 from pathlib import Path
-from filetool import append_bytes_to_file
+from filetool import _append_bytes_to_file
 
 def handler(signum, frame):
     pass
@@ -290,7 +290,7 @@ def signal_spammer():
 spammer = threading.Thread(target=signal_spammer, daemon=True)
 spammer.start()
 
-result = append_bytes_to_file(
+result = _append_bytes_to_file(
     bytes_payload=binary_payload,
     path=path,
     unique_bytes=False,
