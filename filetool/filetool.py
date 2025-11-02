@@ -1288,39 +1288,10 @@ def uncomment_line_in_file(
         PermissionError: If insufficient permissions
         TypeError: If parameters have wrong types
 
-    Example:
-        # Uncomment the first FOO export
-        count = uncomment_line_in_file(
-            path=Path("/etc/environment"),
-            line="export FOO=bar",
-            comment_marker="#",
-        )
-        print(f"Uncommented {count} lines")
-
-        # File before:
-        # export PATH=/usr/bin
-        # # export FOO=bar
-        # export BAR=baz
-        # # export FOO=bar
-        #
-        # File after (multiple=False):
-        # export PATH=/usr/bin
-        # export FOO=bar
-        # export BAR=baz
-        # # export FOO=bar
-
-        # File after (multiple=True):
-        # export PATH=/usr/bin
-        # export FOO=bar
-        # export BAR=baz
-        # export FOO=bar
-
     Notes:
         - Lines without the comment marker will NOT be modified
         - Whitespace handling is only applied to matching logic
         - The uncommented line preserves its original formatting
-        - This is a line-oriented operation; partial line matches are not supported
-        - Uses same locking mechanism as append operations (cooperating processes only)
         - Idempotent: if line is already uncommented, returns 0 with no error
     """
 
