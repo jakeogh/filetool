@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 from typing import BinaryIO
 
+
 def splitlines_bytes(
     data: bytes | BinaryIO,
     *,

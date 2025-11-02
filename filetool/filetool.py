@@ -20,6 +20,7 @@ from typing import BinaryIO
 from typing import cast
 
 from .splitlines_bytes import splitlines_bytes
+from .validate_args import _validate_args
 
 # from rich.traceback import install
 # install(show_locals=True)
@@ -234,67 +235,6 @@ def _safe_open_rw_binary(
             create=True,
         ) as fh:
             yield fh
-
-
-def _validate_args(
-    *,
-    function_name: str,
-    args: dict,
-    constraints: dict[str, Constraint],
-    conflicts: list[tuple] | None = None,
-) -> None:
-    conflicts = conflicts or []
-
-    for param, rules in constraints.items():
-        val = args.get(param)
-
-        # Type check
-        if "type" in rules and not isinstance(val, rules["type"]):
-            raise TypeError(
-                f"{function_name}() {param} must be of type {rules['type']}, got {type(val).__name__}"
-            )
-
-        # Not empty check
-        if rules.get("not_empty") and val == b"":
-            raise ValueError(f"{function_name}() {param} must not be empty")
-
-        # Must not be empty if set
-        if rules.get("nonempty_if_set") and val is not None and len(val) == 0:
-            raise ValueError(f"{function_name}() {param} must not be empty if set")
-
-        # Requires other parameters
-        if "requires" in rules:
-            for required_param in rules["requires"]:
-                required_val = args.get(required_param)
-                if isinstance(val, bool):
-                    if val and required_val is not True:
-                        raise ValueError(
-                            f"{function_name}() {param}=True requires {required_param}=True"
-                        )
-                elif val is not None and required_val is not True:
-                    raise ValueError(
-                        f"{function_name}() {param} requires {required_param}=True"
-                    )
-
-            for dep_param, expected_value in rules.get("requires_if", []):
-                if args.get(dep_param) != expected_value:
-                    raise ValueError(
-                        f"{function_name}() {param}=True requires {dep_param}={expected_value}"
-                    )
-
-        # Requires nonempty parameters if this is True
-        if "requires_nonempty" in rules:
-            for required_param in rules["requires_nonempty"]:
-                required_val = args.get(required_param)
-                if val is True and (required_val is None or len(required_val) == 0):
-                    raise ValueError(
-                        f"{function_name}() {param}=True requires {required_param} to be non-empty"
-                    )
-
-    # Conflicts (apply unconditionally)
-    for a, a_val, b, b_val, msg in conflicts:
-        if args.get(a) == a_val and args.get(b) == b_val:
-            raise ValueError(f"{function_name}()" + msg)
 
 
 def find_bytes_offset_in_stream(
