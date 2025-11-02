@@ -1187,10 +1187,32 @@ def ensure_line_in_config_file(
     path: Path,
     line: str,
     comment_marker: str,
-    ignore_leading_whitespace: bool,
+    ignore_leading_whitespace: bool = True,
+    line_ending: str = "\n",
 ):
+    """
+    Ensure a line is present in a config file (idempotent).
 
-    _bytes = line.encode("utf8", errors="strict")
+    Parameters:
+        path: Path to config file
+        line: Line content WITHOUT line ending
+        comment_marker: Comment marker (e.g. "#")
+        ignore_leading_whitespace: Ignore leading whitespace when checking uniqueness
+        line_ending: Line ending to append (default: "\n")
+
+    Raises:
+        ValueError: If line contains the line_ending
+    """
+    # Validation
+    if line_ending in line:
+        raise ValueError(
+            f"line contains the line_ending delimiter ({line_ending!r}). "
+            f"Pass the line without line ending - it will be appended automatically."
+        )
+
+    # Append line ending and encode
+    _bytes = (line + line_ending).encode("utf8", errors="strict")
+
     _ = _append_bytes_to_file(
         bytes_payload=_bytes,
         path=path,
@@ -1198,7 +1220,7 @@ def ensure_line_in_config_file(
         create_if_missing=True,
         make_parents=True,
         unlink_first=False,
-        line_ending=b"\n",
+        line_ending=line_ending.encode("utf8", errors="strict"),
         comment_marker=comment_marker.encode("utf8", errors="strict"),
         ignore_leading_whitespace=ignore_leading_whitespace,
         ignore_trailing_whitespace=True,
