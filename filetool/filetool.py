@@ -965,13 +965,7 @@ def _modify_file_lines(
                 try:
                     # HOOK:step_28_create_hardlink
                     # Attempt to create hardlink
-                    print(
-                        f"[LEGIT] About to create hardlink, current nlink: {path.stat().st_nlink}"
-                    )
                     os.link(path, link_path)
-                    print(
-                        f"[LEGIT] Created hardlink, new nlink: {path.stat().st_nlink}"
-                    )
 
                     # HOOK:step_29_calculate_expected_link_count
                     expected_link_count = stat_before_rename.st_nlink + 1
@@ -980,10 +974,6 @@ def _modify_file_lines(
                     # Verify hardlink creation by checking link count
                     # We must stat 'path', not 'link_path', to detect replacement
                     stat_after_link = path.stat()
-                    print(
-                        f"[LEGIT] After attacker, stat_after_link.st_nlink = {stat_after_link.st_nlink}"
-                    )
-                    print(f"[LEGIT] expected_link_count = {expected_link_count}")
 
                     # HOOK:step_31_verify_hardlink
                     if (
@@ -1111,33 +1101,10 @@ def comment_out_line_in_file(
         ValueError: If line contains the line_ending delimiter
         TypeError: If parameters have wrong types
 
-    Example:
-        # Comment out all export statements for FOO
-        count = comment_out_line_in_file(
-            path=Path("/etc/environment"),
-            line="export FOO=bar",
-            comment_marker="#",
-        )
-        print(f"Commented out {count} lines")
-
-        # File before:
-        # export PATH=/usr/bin
-        # export FOO=bar
-        # export BAR=baz
-        # export FOO=bar
-        #
-        # File after:
-        # export PATH=/usr/bin
-        # # export FOO=bar
-        # export BAR=baz
-        # # export FOO=bar
-
     Notes:
         - Lines already starting with comment marker (even with whitespace) will NOT match
         - Whitespace handling is only applied to the matching logic, not to the original line
         - Comment marker + space is prepended to the ORIGINAL line (preserves original formatting)
-        - This is a line-oriented operation; partial line matches are not supported
-        - Uses same locking mechanism as append operations (cooperating processes only)
     """
 
     # Parameter validation
