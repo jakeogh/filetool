@@ -936,7 +936,7 @@ def _modify_file_lines(
                     if link_path.exists():
                         try:
                             link_path.unlink()
-                        except:
+                        except FileNotFoundError:
                             pass
 
                 # Check if hardlink verification failed - must be outside try-except
