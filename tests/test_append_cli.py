@@ -5,11 +5,6 @@ Test suite for filetool CLI append commands.
 Tests the CLI interface for append-line and append-bytes commands.
 """
 
-import os
-import sys
-import tempfile
-from pathlib import Path
-
 import pytest
 from click.testing import CliRunner
 
@@ -226,7 +221,6 @@ def test_unlink_first(tmpfile):
             "--path",
             str(tmpfile),
             "--unlink-first",
-            "--unique",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -458,14 +452,50 @@ def test_error_make_parents_without_create(tmpfile):
     )
 
 
-def test_error_unlink_first_without_unique(tmpfile):
-    """Test error when --unlink-first used without --unique."""
+def test_error_unlink_first_with_do_not_create(tmpfile):
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["append-line", "abc", "--path", str(tmpfile), "--unlink-first"]
+        cli,
+        [
+            "append-line",
+            "abc",
+            "--path",
+            str(tmpfile),
+            "--unlink-first",
+            "--do-not-create",
+        ],
     )
     assert result.exit_code != 0
-    assert "--unlink-first requires --unique" in result.output
+    assert "--unlink-first requires file creation" in result.output
+
+
+def test_unlink_first_with_multiple_lines_keeps_all(tmpfile):
+    tmpfile.write_text("old\n")
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["append-line", "a", "b", "c", "--path", str(tmpfile), "--unlink-first"]
+    )
+    assert result.exit_code == 0, result.output
+    assert read_file(tmpfile) == b"a\nb\nc\n"
+
+
+def test_unlink_first_with_multiple_byte_vectors_keeps_all(tmpfile):
+    tmpfile.write_text("old\n")
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["append-bytes", "a", "b", "--path", str(tmpfile), "--unlink-first"]
+    )
+    assert result.exit_code == 0, result.output
+    assert read_file(tmpfile) == b"ab"
+
+
+def test_append_line_to_file_without_trailing_newline(tmpfile):
+    tmpfile.write_bytes(b"first")
+    runner = CliRunner()
+    result = runner.invoke(cli, ["append-line", "second", "--path", str(tmpfile)])
+    assert result.exit_code == 0, result.output
+    assert read_file(tmpfile) == b"first\nsecond\n"
+    assert "Wrote 8 bytes" in result.output
 
 
 def test_error_empty_line(tmpfile):
@@ -587,17 +617,6 @@ def test_symlink_follow(tmpfile, tmp_path):
     result = runner.invoke(cli, ["append-line", "added", "--path", str(symlink)])
     assert result.exit_code == 0, result.output
     assert real_file.read_text() == "original\nadded\n"
-
-
-def test_require_new_placeholder(tmpfile):
-    """Test that --require-new flag exists but is marked as todo."""
-    # This flag is in the code but marked as (todo)
-    # Just verify it doesn't crash
-    runner = CliRunner()
-    result = runner.invoke(
-        cli, ["append-line", "test", "--path", str(tmpfile), "--require-new"]
-    )
-    # Don't assert exit code since implementation is incomplete
 
 
 if __name__ == "__main__":

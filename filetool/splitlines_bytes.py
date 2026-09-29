@@ -42,27 +42,18 @@ def splitlines_bytes(
           `comment_marker` (raises ValueError).
     """
 
-    # comment_marker can be in delim:
-    # list(splitlines_bytes(data=b'payload###comment##next', delim=b'##', comment_marker=b'#'))
-    # -> [b'payload##', b'##', b'next']
-
-    # but delim in comment marker is disallowed because it silently disables comment stripping:
-    # list(splitlines_bytes(data=b'payload###comment##next', delim=b'#', comment_marker=b'##'))
-    # [b'payload#', b'#', b'#', b'comment#', b'#', b'next']
-
     if delim is None or len(delim) == 0:
         raise ValueError("delim must not be empty")
 
     if comment_marker is not None:
-        if len(comment_marker) == 0:
-            raise ValueError("comment_marker must not be empty")
         if not isinstance(comment_marker, bytes):
             raise TypeError("comment_marker must be bytes or None")
+        if len(comment_marker) == 0:
+            raise ValueError("comment_marker must not be empty")
         if comment_marker == delim:
-            # if this was allowed, it would silently disable comment stripping
             raise ValueError("comment_marker can not match delim")
-        if comment_marker is not None and delim in comment_marker:
-            # if this was allowed, it would silently disable comment stripping
+        if delim in comment_marker:
+            # would silently disable comment stripping
             raise ValueError("delim must not be contained in comment_marker")
 
     strip_bytes = b" \t\n\r\x0b\x0c"  # changing this would be a bug because it's what l/rstrip use
@@ -97,7 +88,6 @@ def splitlines_bytes(
         if comment_marker and comment_marker in line:
             if _line == b"":
                 return None
-        # assert len(_line) > 0
         return _line
 
     if isinstance(data, bytes):
@@ -123,16 +113,17 @@ def splitlines_bytes(
             if not chunk:
                 break
             buffer += chunk
+            start = 0
             while True:
-                idx = buffer.find(delim)
+                idx = buffer.find(delim, start)
                 if idx == -1:
                     break
                 end = idx + delim_len
-                line = buffer[:end]
-                _pl = process_line(line)
+                _pl = process_line(buffer[start:end])
                 if _pl is not None:
                     yield _pl
-                buffer = buffer[end:]
+                start = end
+            buffer = buffer[start:]
 
         if buffer:
             _pl = process_line(buffer)

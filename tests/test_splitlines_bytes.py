@@ -429,10 +429,7 @@ def test_fuzz_splitlines_bytes_basic():
     for _ in range(100):
         raw = random_bytes(random.randint(1, 512))
         delim = random_bytes(random.randint(1, 3)) or b"\x00"
-        try:
-            _ = list(splitlines_bytes(raw, delim=delim))
-        except Exception as e:
-            pytest.fail(f"Basic fuzz failed on raw={raw!r}, delim={delim!r}: {e}")
+        _ = list(splitlines_bytes(raw, delim=delim))
 
 
 # ----------------------------
@@ -459,20 +456,15 @@ def test_fuzz_splitlines_bytes_stream():
                     )
                 )
         else:
-            try:
-                _ = list(
-                    splitlines_bytes(
-                        stream,
-                        delim=delim,
-                        comment_marker=comment,
-                        strip_leading_whitespace=strip_leading,
-                        strip_trailing_whitespace=strip_trailing,
-                    )
+            _ = list(
+                splitlines_bytes(
+                    stream,
+                    delim=delim,
+                    comment_marker=comment,
+                    strip_leading_whitespace=strip_leading,
+                    strip_trailing_whitespace=strip_trailing,
                 )
-            except Exception as e:
-                pytest.fail(
-                    f"Stream fuzz failed on data={data!r}, delim={delim!r}, comment={comment!r}: {e}"
-                )
+            )
 
 
 # ----------------------------
@@ -510,49 +502,15 @@ def test_fuzz_splitlines_bytes_edge_cases():
                             )
                         )
                 else:
-                    try:
-                        _ = list(
-                            splitlines_bytes(
-                                raw,
-                                delim=delim,
-                                comment_marker=comment,
-                                strip_leading_whitespace=True,
-                                strip_trailing_whitespace=True,
-                            )
+                    _ = list(
+                        splitlines_bytes(
+                            raw,
+                            delim=delim,
+                            comment_marker=comment,
+                            strip_leading_whitespace=True,
+                            strip_trailing_whitespace=True,
                         )
-                    except Exception as e:
-                        pytest.fail(
-                            f"Edge case failed: raw={raw!r}, delim={delim!r}, comment={comment!r}: {e}"
-                        )
-
-
-# def test_fuzz_splitlines_bytes_edge_cases():
-#    known_inputs = [
-#        b"",
-#        b"\x00\x01\x00\x02",
-#        b"\xff" * 256 + b"\n" + b"\xfe" * 256,
-#        b"\n" * 100,
-#        b"A" * 4096 + b"\nB" * 4096 + b"\n",
-#        b"#comment\n#another\n",
-#        b" \t\n\r\v\f|end",
-#    ]
-#    for raw in known_inputs:
-#        for delim in [b"\n", b"\x00", b"|", b"\xff", b"\n\n"]:
-#            for comment in [None, b"#", b"\x00", b"\xff"]:
-#                try:
-#                    _ = list(
-#                        splitlines_bytes(
-#                            raw,
-#                            delim=delim,
-#                            comment_marker=comment,
-#                            strip_leading_whitespace=True,
-#                            strip_trailing_whitespace=True,
-#                        )
-#                    )
-#                except Exception as e:
-#                    pytest.fail(
-#                        f"Edge case failed: raw={raw!r}, delim={delim!r}, comment={comment!r}: {e}"
-#                    )
+                    )
 
 
 def test_delim_is_null_byte():
@@ -990,9 +948,9 @@ def test_splitlines_bytes_fuzz_against_reference_binaryio_over_all_chunk_size(
             chunk_size=chunk_size,
         )
     )
-    assert (
-        actual == expected
-    ), f"Mismatch for BinaryIO case: {case} with chunk_size={chunk_size}"
+    assert actual == expected, (
+        f"Mismatch for BinaryIO case: {case} with chunk_size={chunk_size}"
+    )
 
 
 def test_splitlines_bytes_bug_case_comment_split():

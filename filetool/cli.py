@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 # tab-width:4
 
-# pylint: disable=too-many-arguments              # [R0913] oo many arguments (13/10) [R0913]
-# pylint: disable=too-many-positional-arguments   # [R0917] oo many positional arguments [R0917]
-# pylint: disable=invalid-name                    # [C0103] single letter var names, name too descriptive(!)
+# pylint: disable=too-many-arguments              # [R0913]
+# pylint: disable=too-many-positional-arguments   # [R0917]
 
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -16,9 +18,11 @@ from .append_bytes_to_file import append_bytes_to_file
 from .append_line_to_file import append_line_to_file
 from .validation import ValidationError
 
-# =============================================================================
-# Click CLI setup
-# =============================================================================
+LINE_ENDINGS = {
+    "LF": b"\n",
+    "CRLF": b"\r\n",
+    "CR": b"\r",
+}
 
 
 @click.group(
@@ -29,8 +33,11 @@ def cli() -> None:
     pass
 
 
-def click_add_options(options):
-    def _add_options(func):
+Decorator = Callable[[Callable[..., Any]], Callable[..., Any]]
+
+
+def click_add_options(options: Sequence[Decorator]) -> Decorator:
+    def _add_options(func: Callable[..., Any]) -> Callable[..., Any]:
         for option in reversed(options):
             func = option(func)
         return func
@@ -59,12 +66,7 @@ CLICK_GLOBAL_OPTIONS = [
     click.option(
         "--unlink-first",
         is_flag=True,
-        help="Unlink (delete) the file before writing.",
-    ),
-    click.option(
-        "--require-new",
-        is_flag=True,
-        help="Require that the file not already exist. (todo)",
+        help="Unlink (delete) the file before writing the first payload.",
     ),
 ]
 
@@ -85,13 +87,13 @@ CLICK_GLOBAL_OPTIONS = [
 @click.option(
     "--line-ending",
     "line_ending_code",
-    help="Line ending. Defaults to `LF` (`0a` `\\n`). Also used to delineate lines for --unique comparison.",
+    help="Line ending. Also used to delineate lines for --unique comparison.",
     default="LF",
-    type=click.Choice(["LF", "CRLF", "CR"]),
+    type=click.Choice(list(LINE_ENDINGS)),
 )
 @click.option(
     "--comment-marker",
-    help="Optional comment marker to use with --unique. Ignores comments when comparing.",
+    help="Comment marker to strip before --unique comparison.",
     default=None,
 )
 @click.option(
@@ -111,29 +113,20 @@ def append_line_command(
     do_not_create_if_missing: bool,
     make_parents: bool,
     unlink_first: bool,
-    require_new: bool,
     line_ending_code: str,
-    comment_marker: str,
+    comment_marker: str | None,
     ignore_leading_whitespace: bool,
     ignore_trailing_whitespace: bool,
-):
+) -> None:
     """Append LINES to a file with control over creation, uniqueness, and error handling."""
 
-    # CLI-only validation
     if not len(lines) > 0:
         raise click.ClickException("At least one LINE must be specified.")
 
-    # Map line ending code to bytes
-    line_ending_dict = {
-        "LF": b"\n",
-        "CRLF": b"\r\n",
-        "CR": b"\r",
-    }
-    line_ending = line_ending_dict[line_ending_code]
+    line_ending = LINE_ENDINGS[line_ending_code]
     create_if_missing = not do_not_create_if_missing
 
-    # Process each line
-    for line in lines:
+    for index, line in enumerate(lines):
         try:
             bytes_written = append_line_to_file(
                 line=line,
@@ -145,16 +138,13 @@ def append_line_command(
                 ignore_trailing_whitespace=ignore_trailing_whitespace,
                 create_if_missing=create_if_missing,
                 make_parents=make_parents,
-                unlink_first=unlink_first,
+                unlink_first=unlink_first and index == 0,
             )
-
-            if bytes_written:
-                click.echo(
-                    f"[filetool append-line] Wrote {bytes_written} bytes to {path}"
-                )
         except ValidationError as e:
-            # Use CLI-friendly message if available
             raise click.ClickException(e.cli_msg or str(e)) from e
+
+        if bytes_written:
+            click.echo(f"[filetool] Wrote {bytes_written} bytes to {path}")
 
 
 @cli.command("append-bytes")
@@ -173,7 +163,7 @@ def append_line_command(
 @click.option(
     "--hex-input",
     is_flag=True,
-    help="Interpret input as hex (e.g., '68690a' -> b'hi\n').",
+    help="Interpret input as hex (e.g., '68690a' -> b'hi\\n').",
 )
 @click.option(
     "--bytes-from-path",
@@ -183,17 +173,15 @@ def append_line_command(
 def append_bytes_command(
     byte_vectors: tuple[str, ...],
     path: Path,
-    bytes_from_path: None | Path,
+    bytes_from_path: Path | None,
     unique_bytes: bool,
     do_not_create_if_missing: bool,
     make_parents: bool,
     unlink_first: bool,
-    require_new: bool,
     hex_input: bool,
-):
+) -> None:
     """Append BYTES to a file with control over creation, uniqueness, and error handling."""
 
-    # CLI-only validation
     if not (len(byte_vectors) > 0 or bytes_from_path):
         raise click.ClickException(
             "At least one of BYTES or --bytes-from-path must be specified."
@@ -205,29 +193,22 @@ def append_bytes_command(
 
     create_if_missing = not do_not_create_if_missing
 
-    # Collect all byte payloads
-    bytes_payloads = []
+    bytes_payloads: list[bytes] = []
     if bytes_from_path:
-        try:
-            with open(bytes_from_path, "rb") as fh:
-                bytes_payloads.append(fh.read())
-        except OSError as e:
-            raise click.ClickException(f"Failed to read {bytes_from_path}: {e}") from e
+        bytes_payloads.append(bytes_from_path.read_bytes())
     else:
         for bv in byte_vectors:
             if len(bv) == 0:
                 raise click.ClickException("Cannot write empty input")
-            try:
-                if hex_input:
-                    data = bytes.fromhex(bv)
-                else:
-                    data = bv.encode("utf-8", errors="strict")
-                bytes_payloads.append(data)
-            except ValueError as e:
-                raise click.ClickException(f"Invalid input: {e}") from e
+            if hex_input:
+                try:
+                    bytes_payloads.append(bytes.fromhex(bv))
+                except ValueError as e:
+                    raise click.ClickException(f"Invalid hex input: {e}") from e
+            else:
+                bytes_payloads.append(bv.encode("utf-8", errors="strict"))
 
-    # Write each payload
-    for data in bytes_payloads:
+    for index, data in enumerate(bytes_payloads):
         try:
             bytes_written = append_bytes_to_file(
                 data=data,
@@ -235,14 +216,13 @@ def append_bytes_command(
                 unique=unique_bytes,
                 create_if_missing=create_if_missing,
                 make_parents=make_parents,
-                unlink_first=unlink_first,
+                unlink_first=unlink_first and index == 0,
             )
-
-            if bytes_written:
-                click.echo(f"[filetool] Wrote {bytes_written} bytes to {path}")
         except ValidationError as e:
-            # Use CLI-friendly message if available
             raise click.ClickException(e.cli_msg or str(e)) from e
+
+        if bytes_written:
+            click.echo(f"[filetool] Wrote {bytes_written} bytes to {path}")
 
 
 if __name__ == "__main__":

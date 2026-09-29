@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 # tab-width:4
 
-"""
-Public API function for appending lines to files with CLI support.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -27,45 +23,31 @@ def append_line_to_file(
     unlink_first: bool = False,
 ) -> int:
     """
-    Append a single line to a file with automatic line ending.
-
-    Args:
-        line: The line to append (without newline)
-        path: Path to the file
-        unique: Only append if line not already present
-        line_ending: Line ending to use (default: LF)
-        comment_marker: Optional comment marker for unique comparison
-        ignore_leading_whitespace: Ignore leading whitespace in unique comparison
-        ignore_trailing_whitespace: Ignore trailing whitespace in unique comparison
-        create_if_missing: Create file if it doesn't exist
-        make_parents: Create parent directories if needed
-        unlink_first: Unlink file before writing (requires unique=True)
-
-    Returns:
-        Number of bytes written (0 if already present with unique=True)
-
-    Raises:
-        ValueError: If line is empty or contains line_ending
-        ValueError: If unlink_first=True without unique=True
-        ValueError: If make_parents=True without create_if_missing=True
-        ValueError: If whitespace flags used without unique=True
+    Append line plus line_ending to path. A missing line_ending at the end
+    of an existing file is written first. With unique, skip if an equivalent
+    line is present. Returns the number of bytes written.
     """
-    # Validation
     if len(line) == 0:
         raise ValidationError(
             "Line must not be empty", cli_msg="LINE must not be empty"
         )
 
-    if unlink_first and not unique:
+    if unlink_first and not create_if_missing:
         raise ValidationError(
-            "unlink_first=True requires unique=True",
-            cli_msg="--unlink-first requires --unique",
+            "unlink_first=True requires create_if_missing=True",
+            cli_msg="--unlink-first requires file creation (do not use --do-not-create)",
         )
 
     if make_parents and not create_if_missing:
         raise ValidationError(
             "make_parents=True requires create_if_missing=True",
             cli_msg="--make-parents requires file creation (do not use --do-not-create)",
+        )
+
+    if comment_marker is not None and not unique:
+        raise ValidationError(
+            "comment_marker requires unique=True",
+            cli_msg="--comment-marker requires --unique",
         )
 
     if ignore_leading_whitespace and not unique:
@@ -80,10 +62,8 @@ def append_line_to_file(
             cli_msg="--ignore-trailing-whitespace requires --unique",
         )
 
-    # Encode line
     line_bytes = line.encode("utf-8", errors="strict")
 
-    # Check for embedded line endings
     if line_ending in line_bytes:
         raise ValidationError(
             f"Line contains the line_ending delimiter ({line_ending!r}). "
@@ -98,19 +78,17 @@ def append_line_to_file(
             ),
         )
 
-    # Add line ending
-    bytes_payload = line_bytes + line_ending
-
-    # Write
     return _append_bytes_to_file(
-        bytes_payload=bytes_payload,
+        bytes_payload=line_bytes + line_ending,
         path=path,
         unique_bytes=unique,
         create_if_missing=create_if_missing,
         make_parents=make_parents,
         unlink_first=unlink_first,
-        line_ending=line_ending if unique else None,
-        comment_marker=comment_marker.encode("utf8") if comment_marker else None,
+        line_ending=line_ending,
+        comment_marker=comment_marker.encode("utf8")
+        if comment_marker is not None
+        else None,
         ignore_leading_whitespace=ignore_leading_whitespace,
         ignore_trailing_whitespace=ignore_trailing_whitespace,
     )

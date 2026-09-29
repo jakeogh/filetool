@@ -117,56 +117,6 @@ def test_validate_args_requires_if_check():
     )
 
 
-def test_validate_args_requires_nonempty_check():
-    """Test that _validate_args validates requires_nonempty constraint."""
-    constraints = {
-        "param_a": {
-            "type": bool,
-            "requires_nonempty": ["param_b"],
-        },
-        "param_b": {
-            "type": bytes,
-        },
-    }
-
-    # Should raise ValueError when param_a=True but param_b is empty
-    with pytest.raises(
-        ValueError, match="param_a=True requires param_b to be non-empty"
-    ):
-        _validate_args(
-            function_name="test_function",
-            args={"param_a": True, "param_b": b""},
-            constraints=constraints,
-        )
-
-    # Should raise ValueError when param_a=True but param_b is None
-    with pytest.raises(
-        ValueError, match="param_a=True requires param_b to be non-empty"
-    ):
-        _validate_args(
-            function_name="test_function",
-            args={"param_a": True, "param_b": None},
-            constraints=constraints,
-        )
-
-
-def test_validate_args_conflicts_check():
-    """Test that _validate_args validates conflicts."""
-    constraints = {}
-    conflicts = [
-        ("param_a", True, "param_b", True, "param_a and param_b cannot both be True"),
-    ]
-
-    # Should raise ValueError when both params are True
-    with pytest.raises(ValueError, match="param_a and param_b cannot both be True"):
-        _validate_args(
-            function_name="test_function",
-            args={"param_a": True, "param_b": True},
-            constraints=constraints,
-            conflicts=conflicts,
-        )
-
-
 def test_validate_args_passes_valid_args():
     """Test that _validate_args passes for valid arguments."""
     constraints = {

@@ -3,8 +3,6 @@
 Tests for ensure_line_in_config_file function.
 """
 
-from pathlib import Path
-
 import pytest
 
 from filetool.filetool import ensure_line_in_config_file
@@ -117,7 +115,6 @@ def test_ensure_line_with_custom_comment_marker(tmp_path):
     assert config_file.read_text() == "line1\nline2 // inline comment\nline3\n"
 
 
-
 def test_ensure_line_multiple_calls_idempotent(tmp_path):
     """Test that multiple calls to ensure_line_in_config_file are idempotent."""
     config_file = tmp_path / "config.txt"
@@ -134,3 +131,32 @@ def test_ensure_line_multiple_calls_idempotent(tmp_path):
 
     # Should only have one line2
     assert config_file.read_text() == "line1\nline2\n"
+
+
+def test_ensure_line_returns_bytes_written(tmp_path):
+    config = tmp_path / "config.txt"
+    assert ensure_line_in_config_file(path=config, line="a", comment_marker="#") == 2
+    assert ensure_line_in_config_file(path=config, line="a", comment_marker="#") == 0
+
+
+def test_ensure_line_adds_separator_to_unterminated_file(tmp_path):
+    config = tmp_path / "config.txt"
+    config.write_bytes(b"first")
+    assert (
+        ensure_line_in_config_file(path=config, line="second", comment_marker="#") == 8
+    )
+    assert config.read_bytes() == b"first\nsecond\n"
+
+
+def test_ensure_line_matches_unterminated_final_line(tmp_path):
+    config = tmp_path / "config.txt"
+    config.write_bytes(b"first\nsecond")
+    assert (
+        ensure_line_in_config_file(path=config, line="second", comment_marker="#") == 0
+    )
+    assert config.read_bytes() == b"first\nsecond"
+
+
+def test_ensure_line_rejects_embedded_line_ending(tmp_path):
+    with pytest.raises(ValueError, match="line contains the line_ending delimiter"):
+        ensure_line_in_config_file(path=tmp_path / "c", line="a\nb", comment_marker="#")

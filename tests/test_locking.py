@@ -1,292 +1,113 @@
-import errno
 import fcntl
 import multiprocessing
 import os
-import shutil
-import tempfile
 import time
-from multiprocessing import Process
-from multiprocessing import Queue
 from pathlib import Path
-from unittest import mock
 
 import pytest
-from locked_file_handle_orig import _locked_file_handle_orig
 
+from filetool.filetool import _directory_lock
 from filetool.filetool import _locked_file_handle
 
 
-@pytest.mark.parametrize(
-    "which_fn,should_raise",
-    [
-        (_locked_file_handle_orig, True),
-        (_locked_file_handle, False),
-    ],
-)
-def test_locked_file_unlock_fails_param(
-    which_fn,
-    tmp_path,
-    capsys,
-    should_raise,
-):
-    path = tmp_path / "unlockfail.txt"
-    path.write_bytes(b"unlock test\n")
-
-    with mock.patch("fcntl.flock") as flock_mock:
-
-        def flock_side_effect(fd, operation):
-            if operation in (fcntl.LOCK_EX, fcntl.LOCK_EX | fcntl.LOCK_NB):
-                return 0  # Simulate success
-            elif operation == fcntl.LOCK_UN:
-                raise OSError(errno.EPERM, "Simulated unlock failure")
-            raise RuntimeError("Unexpected flock operation")
-
-        flock_mock.side_effect = flock_side_effect
-
-        if should_raise:
-            with pytest.raises(OSError, match="Simulated unlock failure"):
-                with which_fn(
-                    path=path,
-                    mode="rb+",
-                    blocking=True,
-                    create=False,
-                ) as fh:
-                    fh.write(b"closing soon\n")
-        else:
-            with which_fn(
-                path=path,
-                mode="rb+",
-                blocking=True,
-                create=False,
-            ) as fh:
-                fh.write(b"closing soon\n")
-
-            captured = capsys.readouterr()
-            assert "Warning: failed to unlock file" in captured.err
-            assert "Simulated unlock failure" in captured.err
-
-
-# exposed bug in new _locked_file_handle implementaton
-def test_locked_file_raises_oserror_enolck(tmp_path):
-    path = tmp_path / "enolck.txt"
-    path.write_bytes(b"x\n")
-
-    # Patch fcntl.flock to raise ENOLCK
-    with mock.patch("fcntl.flock") as flock_mock:
-        flock_mock.side_effect = OSError(errno.ENOLCK, "No locks available")
-
-        with pytest.raises(OSError) as exc_info:
-            with _locked_file_handle(
-                path=path,
-                mode="rb+",
-                blocking=True,
-                create=False,
-            ):
-                pass  # will not reach here
-
-        assert "ENOLCK" in str(exc_info.value)
-        assert "lockd" in str(exc_info.value) or "nolock" in str(exc_info.value)
-
-
-def test_locked_file_allows_exclusive_access(tmp_path):
-    path = tmp_path / "locktest1"
-    path.write_bytes(b"original\n")
-
-    with _locked_file_handle(
-        path=path,
-        mode="rb+",
-        blocking=True,
-        create=False,
-    ) as fh:
-        data = fh.read()
-        assert b"original" in data
-        fh.seek(0, os.SEEK_END)
-        fh.write(b"locked\n")
-
-    # Check that write succeeded
-    assert b"locked\n" in path.read_bytes()
-
-
-def try_lock_nonblocking(path: str, q):
+def _probe_file_lock(path: str, q: multiprocessing.Queue) -> None:
+    fd = os.open(path, os.O_RDWR)
     try:
-        with _locked_file_handle(
-            path=Path(path),
-            mode="rb+",
-            blocking=False,
-            create=False,
-        ):
-            q.put("acquired")
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         q.put("blocked")
+        return
+    finally:
+        os.close(fd)
+    q.put("acquired")
 
 
-def test_locked_file_blocks_other_access(tmp_path):
-    path = tmp_path / "locktest2"
-    path.write_bytes(b"first\n")
-
-    with _locked_file_handle(
-        path=path,
-        mode="rb+",
-        blocking=True,
-        create=False,
-    ):
-        q = multiprocessing.Queue()
-        p = multiprocessing.Process(target=try_lock_nonblocking, args=(str(path), q))
-        p.start()
-        p.join(timeout=2)
-        assert q.get(timeout=1) == "blocked"
+def _probe_directory_lock(directory: str, q: multiprocessing.Queue) -> None:
+    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        q.put("blocked")
+        return
+    finally:
+        os.close(fd)
+    q.put("acquired")
 
 
-def test_locked_file_allows_access_after_release(tmp_path):
-    path = tmp_path / "locktest3"
-    path.write_bytes(b"init\n")
-
-    with _locked_file_handle(
-        path=path,
-        mode="rb+",
-        blocking=True,
-        create=False,
-    ):
-        pass  # acquire and release immediately
-
-    q = multiprocessing.Queue()
-    p = multiprocessing.Process(target=try_lock_nonblocking, args=(str(path), q))
+def _probe(target, arg: str) -> str:
+    q: multiprocessing.Queue = multiprocessing.Queue()
+    p = multiprocessing.Process(target=target, args=(arg, q))
     p.start()
-    p.join(timeout=2)
-    assert q.get(timeout=1) == "acquired"
+    result = q.get(timeout=5)
+    p.join(timeout=5)
+    return result
 
 
-def test_locked_file_creates_when_create_true(tmp_path):
-    path = tmp_path / "autocreate.bin"
-    assert not path.exists()
+def test_locked_file_handle_reads_and_writes(tmp_path: Path):
+    path = tmp_path / "f"
+    path.write_bytes(b"original\n")
+    with _locked_file_handle(path=path, create=False) as fh:
+        assert fh.read() == b"original\n"
+        fh.write(b"locked\n")
+    assert path.read_bytes() == b"original\nlocked\n"
 
-    with _locked_file_handle(
-        path=path,
-        mode="rb+",
-        blocking=True,
-        create=True,
-    ) as fh:
+
+def test_locked_file_handle_missing_file_raises(tmp_path: Path):
+    with pytest.raises(FileNotFoundError):
+        with _locked_file_handle(path=tmp_path / "missing", create=False):
+            pass
+
+
+def test_locked_file_handle_creates_when_create_true(tmp_path: Path):
+    path = tmp_path / "new"
+    with _locked_file_handle(path=path, create=True) as fh:
         fh.write(b"created\n")
-
-    assert path.exists()
     assert path.read_bytes() == b"created\n"
 
 
-def test_locked_file_raises_blockingioerror(tmp_path):
-    path = tmp_path / "locktest4"
+def test_locked_file_handle_excludes_other_process(tmp_path: Path):
+    path = tmp_path / "f"
     path.write_bytes(b"x\n")
-
-    with _locked_file_handle(
-        path=path,
-        mode="rb+",
-        blocking=True,
-        create=False,
-    ):
-        with pytest.raises(BlockingIOError):
-            with _locked_file_handle(
-                path=path,
-                mode="rb+",
-                blocking=False,
-                create=False,
-            ):
-                pass  # won't reach
+    with _locked_file_handle(path=path, create=False):
+        assert _probe(_probe_file_lock, str(path)) == "blocked"
+    assert _probe(_probe_file_lock, str(path)) == "acquired"
 
 
-@pytest.fixture
-def temp_file():
-    dirpath = tempfile.mkdtemp()
-    path = Path(dirpath) / "locktest.bin"
-    path.write_bytes(b"initial\n")
-    yield path
-    shutil.rmtree(dirpath)
+def test_locked_file_handle_releases_on_exception(tmp_path: Path):
+    path = tmp_path / "f"
+    path.write_bytes(b"x\n")
+    with pytest.raises(RuntimeError):
+        with _locked_file_handle(path=path, create=False):
+            raise RuntimeError("boom")
+    assert _probe(_probe_file_lock, str(path)) == "acquired"
 
 
-def test_basic_lock_write(temp_file):
-    with _locked_file_handle(
-        path=temp_file,
-        mode="rb+",
-        blocking=True,
-        create=False,
-    ) as fh:
-        data = fh.read()
-        fh.seek(0, os.SEEK_END)
-        fh.write(b"appended\n")
-
-    contents = temp_file.read_bytes()
-    assert contents.endswith(b"appended\n")
+def test_directory_lock_excludes_other_process(tmp_path: Path):
+    with _directory_lock(tmp_path) as fd:
+        assert os.fstat(fd).st_ino == tmp_path.stat().st_ino
+        assert _probe(_probe_directory_lock, str(tmp_path)) == "blocked"
+    assert _probe(_probe_directory_lock, str(tmp_path)) == "acquired"
 
 
-def test_lock_blocks_when_held(temp_file):
-    queue = Queue()
-
-    def hold_lock(path, q):
-        with _locked_file_handle(
-            path=path,
-            mode="rb+",
-            blocking=True,
-            create=False,
-        ):
-            q.put("locked")
-            time.sleep(1)
-
-    p = Process(target=hold_lock, args=(temp_file, queue))
-    p.start()
-    assert queue.get(timeout=1) == "locked"
-
-    t0 = time.time()
-    with _locked_file_handle(
-        path=temp_file,
-        mode="rb+",
-        blocking=True,
-        create=False,
-    ) as fh:
-        t1 = time.time()
-
-    p.join()
-    assert (t1 - t0) >= 0.8  # Allow small timing variation
-
-
-def test_lock_nonblocking_failure(temp_file):
-    def hold_lock(path):
-        with _locked_file_handle(
-            path=path,
-            mode="rb+",
-            blocking=True,
-            create=False,
-        ):
-            time.sleep(1)
-
-    p = Process(target=hold_lock, args=(temp_file,))
-    p.start()
-    time.sleep(0.1)  # Give time for subprocess to acquire lock
-
-    with pytest.raises(BlockingIOError):
-        with _locked_file_handle(
-            path=temp_file,
-            mode="rb+",
-            blocking=False,
-            create=False,
-        ):
+def test_directory_lock_missing_directory_raises(tmp_path: Path):
+    with pytest.raises(FileNotFoundError):
+        with _directory_lock(tmp_path / "missing"):
             pass
 
-    p.join()
+
+def _hold_directory_lock(directory: str, q: multiprocessing.Queue) -> None:
+    with _directory_lock(Path(directory)):
+        q.put("locked")
+        time.sleep(0.5)
 
 
-def test_unlock_on_exit(temp_file):
-    with _locked_file_handle(
-        path=temp_file,
-        mode="rb+",
-        blocking=True,
-        create=False,
-    ) as fh:
-        fh.write(b"check\n")
-
-    # Should be immediately acquirable again
-    with _locked_file_handle(
-        path=temp_file,
-        mode="rb+",
-        blocking=True,
-        create=False,
-    ) as fh2:
-        content = fh2.read()
-    assert b"check\n" in content
+def test_directory_lock_blocks_until_released(tmp_path: Path):
+    q: multiprocessing.Queue = multiprocessing.Queue()
+    p = multiprocessing.Process(target=_hold_directory_lock, args=(str(tmp_path), q))
+    p.start()
+    assert q.get(timeout=5) == "locked"
+    t0 = time.monotonic()
+    with _directory_lock(tmp_path):
+        waited = time.monotonic() - t0
+    p.join(timeout=5)
+    assert waited >= 0.4

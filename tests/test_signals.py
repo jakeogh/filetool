@@ -9,20 +9,16 @@ during write operations, ensuring data integrity and proper cleanup.
 import os
 import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
-from shutil import which
 
 import pytest
 
 
 @pytest.fixture
-def cli_path():
-    """Get the path to the filetool CLI executable."""
-    path = which("filetool")
-    if not path:
-        pytest.skip("filetool not found in PATH")
-    return path
+def cli_path() -> str:
+    return f"{sys.executable} -m filetool.cli"
 
 
 def test_bulk_write_completes_without_signal(tmp_path: Path, cli_path: str):
@@ -37,7 +33,7 @@ def test_bulk_write_completes_without_signal(tmp_path: Path, cli_path: str):
         for _ in range(lines):
             # Use append-bytes (not append) and don't use --create (it doesn't exist)
             f.write(
-                f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input &\n'
+                f'{cli_path} append-bytes "{hex_line}" --path "{target}" --hex-input &\n'
             )
         f.write("wait\n")
     script.chmod(0o755)
@@ -68,7 +64,7 @@ def test_signal_before_writes_complete(
         f.write("#!/bin/bash\n")
         for _ in range(writer_count):
             f.write(
-                f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input &\n'
+                f'{cli_path} append-bytes "{hex_line}" --path "{target}" --hex-input &\n'
             )
             f.write("sleep 0.01\n")  # Stagger writes
         f.write("wait\n")
@@ -87,11 +83,10 @@ def test_signal_before_writes_complete(
             break
         time.sleep(0.05)
 
-    # Send signal to process group
     try:
         os.killpg(proc.pid, signal_to_send)
     except ProcessLookupError:
-        pass  # Already exited
+        pass  # writers already finished
 
     try:
         proc.wait(timeout=5)
@@ -124,9 +119,7 @@ def test_signal_with_unique_mode(
     with script.open("w") as f:
         f.write("#!/bin/bash\n")
         for _ in range(writer_count):
-            cmd = (
-                f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input'
-            )
+            cmd = f'{cli_path} append-bytes "{hex_line}" --path "{target}" --hex-input'
             if use_unique:
                 cmd += " --unique"
             f.write(f"{cmd} &\n")
@@ -192,7 +185,7 @@ def test_signal_handling_other_signals(
         f.write("#!/bin/bash\n")
         for _ in range(writer_count):
             f.write(
-                f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input &\n'
+                f'{cli_path} append-bytes "{hex_line}" --path "{target}" --hex-input &\n'
             )
         f.write("wait\n")
     script.chmod(0o755)
@@ -240,7 +233,7 @@ def test_rapid_signal_spam(tmp_path: Path, cli_path: str):
         f.write("#!/bin/bash\n")
         for _ in range(50):
             f.write(
-                f'"{cli_path}" append-bytes "{hex_line}" --path "{target}" --hex-input &\n'
+                f'{cli_path} append-bytes "{hex_line}" --path "{target}" --hex-input &\n'
             )
         f.write("wait\n")
     script.chmod(0o755)

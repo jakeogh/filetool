@@ -3,8 +3,6 @@
 Tests for validation errors in append_line_to_file.
 """
 
-from pathlib import Path
-
 import pytest
 
 from filetool import append_line_to_file
@@ -22,18 +20,46 @@ def test_empty_line_raises_error(tmp_path):
         )
 
 
-def test_unlink_first_without_unique_raises_error(tmp_path):
-    """Test that unlink_first=True without unique=True raises ValidationError."""
+def test_unlink_first_without_create_raises_error(tmp_path):
     test_file = tmp_path / "test.txt"
     test_file.write_text("existing line\n")
 
-    with pytest.raises(ValueError, match="unlink_first=True requires unique=True"):
+    with pytest.raises(
+        ValueError, match="unlink_first=True requires create_if_missing=True"
+    ):
         append_line_to_file(
             line="new line",
             path=test_file,
             unlink_first=True,
-            unique=False,
+            create_if_missing=False,
         )
+
+
+def test_comment_marker_without_unique_raises_error(tmp_path):
+    test_file = tmp_path / "test.txt"
+    with pytest.raises(ValueError, match="comment_marker requires unique=True"):
+        append_line_to_file(line="x", path=test_file, comment_marker="#")
+
+
+def test_unlink_first_does_not_require_unique(tmp_path):
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("old\n")
+    assert append_line_to_file(line="new", path=test_file, unlink_first=True) == 4
+    assert test_file.read_bytes() == b"new\n"
+
+
+def test_missing_trailing_newline_gets_separator(tmp_path):
+    test_file = tmp_path / "test.txt"
+    test_file.write_bytes(b"first")
+    assert append_line_to_file(line="second", path=test_file) == 8
+    assert test_file.read_bytes() == b"first\nsecond\n"
+
+
+def test_unique_matches_unterminated_final_line(tmp_path):
+    test_file = tmp_path / "test.txt"
+    test_file.write_bytes(b"first\nsecond")
+    assert append_line_to_file(line="second", path=test_file, unique=True) == 0
+    assert test_file.read_bytes() == b"first\nsecond"
 
 
 def test_make_parents_without_create_raises_error(tmp_path):

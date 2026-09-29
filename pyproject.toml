@@ -6,19 +6,22 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "filetool"
-version = "1!0.0.1784693484"
+version = "1!0.0.1790715971"
 description = "Common file operations"
 authors = [
     { name = "Justin Keogh", email = "github.com@v6y.net" },
 ]
 dependencies = [
     "click",
-    "psutil",
-    "pytest",
-    "hypothesis",
 ]
 license = "ISC"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-randomly",
+]
 
 [project.urls]
 Homepage = "https://github.com/jakeogh/filetool"
@@ -27,7 +30,6 @@ Homepage = "https://github.com/jakeogh/filetool"
 filetool = "filetool.cli:cli"
 
 [tool.setuptools]
-include-package-data = true
 zip-safe = false
 
 [tool.setuptools.packages.find]
@@ -42,10 +44,6 @@ filetool = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = [
-    "eintr_tests: Tests that verify EINTR signal handling (run with -m eintr_tests)",
-]
-addopts = "-v -rs"
+required_plugins = ["pytest-randomly"]
+addopts = "-x -rs -W error"
 pythonpath = ["."]
-
-

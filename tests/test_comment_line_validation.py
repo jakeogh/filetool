@@ -3,10 +3,6 @@
 Tests for edge cases and error paths in filetool core functions.
 """
 
-import os
-import threading
-from pathlib import Path
-
 import pytest
 
 from filetool import comment_out_line_in_file
@@ -240,3 +236,22 @@ def test_uncomment_nonexistent_file_raises_error(tmp_path):
             path=test_file,
             line="line1",
         )
+
+
+def test_comment_out_unterminated_final_line(tmp_path):
+    config = tmp_path / "config.txt"
+    config.write_bytes(b"a\nb")
+
+    assert comment_out_line_in_file(path=config, line="b") == 1
+    assert config.read_bytes() == b"a\n# b"
+
+
+def test_comment_out_symlinked_config(tmp_path):
+    real = tmp_path / "real.conf"
+    real.write_bytes(b"export FOO=bar\n")
+    link = tmp_path / "link.conf"
+    link.symlink_to(real)
+
+    assert comment_out_line_in_file(path=link, line="export FOO=bar") == 1
+    assert link.is_symlink()
+    assert real.read_bytes() == b"# export FOO=bar\n"

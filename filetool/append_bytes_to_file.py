@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 # tab-width:4
 
-"""
-Public API function for appending bytes to files with CLI support.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -23,34 +19,18 @@ def append_bytes_to_file(
     unlink_first: bool = False,
 ) -> int:
     """
-    Append raw bytes to a file.
-
-    Args:
-        data: The bytes to append
-        path: Path to the file
-        unique: Only append if bytes not already present (uses substring search)
-        create_if_missing: Create file if it doesn't exist
-        make_parents: Create parent directories if needed
-        unlink_first: Unlink file before writing (requires unique=True)
-
-    Returns:
-        Number of bytes written (0 if already present with unique=True)
-
-    Raises:
-        ValueError: If data is empty
-        ValueError: If unlink_first=True without unique=True
-        ValueError: If make_parents=True without create_if_missing=True
+    Append raw bytes to path. With unique, skip if data occurs anywhere in
+    the file. Returns the number of bytes written.
     """
-    # Validation
     if len(data) == 0:
         raise ValidationError(
             "Data must not be empty", cli_msg="BYTES must not be empty"
         )
 
-    if unlink_first and not unique:
+    if unlink_first and not create_if_missing:
         raise ValidationError(
-            "unlink_first=True requires unique=True",
-            cli_msg="--unlink-first requires --unique",
+            "unlink_first=True requires create_if_missing=True",
+            cli_msg="--unlink-first requires file creation (do not use --do-not-create)",
         )
 
     if make_parents and not create_if_missing:
@@ -59,7 +39,6 @@ def append_bytes_to_file(
             cli_msg="--make-parents requires file creation (do not use --do-not-create)",
         )
 
-    # Write
     return _append_bytes_to_file(
         bytes_payload=data,
         path=path,
@@ -67,8 +46,4 @@ def append_bytes_to_file(
         create_if_missing=create_if_missing,
         make_parents=make_parents,
         unlink_first=unlink_first,
-        line_ending=None,  # Binary mode - no line ending
-        comment_marker=None,
-        ignore_leading_whitespace=False,
-        ignore_trailing_whitespace=False,
     )

@@ -1,7 +1,6 @@
 # conftest.py
 import sys
 
-import pytest
 from click.testing import Result
 
 _seen_results = []

@@ -3,8 +3,6 @@
 Tests for uncomment_line_in_file function.
 """
 
-from pathlib import Path
-
 import pytest
 
 from filetool import uncomment_line_in_file
@@ -397,3 +395,65 @@ def test_uncomment_type_errors(tmp_path):
             comment_marker="#",
             multiple="yes",
         )
+
+
+def test_uncomment_indented_comment_preserves_indentation(tmp_path):
+    config = tmp_path / "config.txt"
+    config.write_bytes(b"  # export FOO=bar\n\t# export BAZ=1\n")
+
+    assert uncomment_line_in_file(path=config, line="export FOO=bar") == 1
+    assert config.read_bytes() == b"  export FOO=bar\n\t# export BAZ=1\n"
+
+    assert uncomment_line_in_file(path=config, line="export BAZ=1") == 1
+    assert config.read_bytes() == b"  export FOO=bar\n\texport BAZ=1\n"
+
+
+def test_uncomment_indented_comment_requires_ignore_leading_whitespace(tmp_path):
+    config = tmp_path / "config.txt"
+    config.write_bytes(b"  # export FOO=bar\n")
+
+    with pytest.raises(ValueError, match="Line not found"):
+        uncomment_line_in_file(
+            path=config, line="export FOO=bar", ignore_leading_whitespace=False
+        )
+    assert config.read_bytes() == b"  # export FOO=bar\n"
+
+
+def test_uncomment_unterminated_final_line(tmp_path):
+    config = tmp_path / "config.txt"
+    config.write_bytes(b"a\n# b")
+
+    assert uncomment_line_in_file(path=config, line="b") == 1
+    assert config.read_bytes() == b"a\nb"
+
+
+def test_uncomment_finds_uncommented_unterminated_final_line(tmp_path):
+    config = tmp_path / "config.txt"
+    config.write_bytes(b"a\nb")
+
+    assert uncomment_line_in_file(path=config, line="b") == 0
+    assert config.read_bytes() == b"a\nb"
+
+
+def test_uncomment_symlinked_config(tmp_path):
+    real = tmp_path / "real.conf"
+    real.write_bytes(b"# export FOO=bar\n")
+    link = tmp_path / "link.conf"
+    link.symlink_to(real)
+
+    assert uncomment_line_in_file(path=link, line="export FOO=bar") == 1
+    assert link.is_symlink()
+    assert real.read_bytes() == b"export FOO=bar\n"
+
+
+def test_comment_then_uncomment_round_trips_indented_line(tmp_path):
+    from filetool import comment_out_line_in_file
+
+    config = tmp_path / "config.txt"
+    original = b"    export FOO=bar\n"
+    config.write_bytes(original)
+
+    assert comment_out_line_in_file(path=config, line="export FOO=bar") == 1
+    assert config.read_bytes() == b"#     export FOO=bar\n"
+    assert uncomment_line_in_file(path=config, line="export FOO=bar") == 1
+    assert config.read_bytes() == original
