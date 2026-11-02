@@ -5,9 +5,9 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "firefoxtool"
-version = "1!0.0.1793652951"
-description = "Launch sandboxed firefox-bin with a managed profile"
+name = "filetool"
+version = "1!0.0.1793653174"
+description = "Common file operations"
 authors = [
     { name = "Justin Keogh", email = "github.com@v6y.net" },
 ]
@@ -17,11 +17,17 @@ dependencies = [
 license = "ISC"
 requires-python = ">=3.12"
 
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-randomly",
+]
+
 [project.urls]
-Homepage = "https://github.com/jakeogh/firefoxtool"
+Homepage = "https://github.com/jakeogh/filetool"
 
 [project.scripts]
-firefoxtool = "firefoxtool.firefoxtool:cli"
+filetool = "filetool.cli:cli"
 
 [tool.setuptools]
 zip-safe = false
@@ -32,6 +38,12 @@ exclude = [
 ]
 
 [tool.setuptools.package-data]
-firefoxtool = [
+filetool = [
     "py.typed",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+required_plugins = ["pytest-randomly"]
+addopts = "-x -rs -W error"
+pythonpath = ["."]
